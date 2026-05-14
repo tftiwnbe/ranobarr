@@ -37,6 +37,7 @@ class TrackedBookSummary(BaseModel):
     slug: str
     title: str
     available_chapters: int
+    known_remote_chapters: int
     branch_mode: str
     selected_branch_id: str | None
     selected_branch_label: str | None

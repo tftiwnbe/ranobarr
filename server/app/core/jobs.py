@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.database import sessionmanager
 from app.models import JobRecord
+from app.ranobelib import RanobeLibClient
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,7 @@ class JobRuntime:
 
     def __init__(self) -> None:
         self._heartbeat_task: asyncio.Task | None = None
+        self._tick_interval_seconds = 5
 
     async def start(self) -> None:
         if self._heartbeat_task is None:
@@ -91,12 +94,35 @@ class JobRuntime:
 
     async def _heartbeat(self) -> None:
         while True:
-            logger.debug("Job runtime heartbeat")
-            await asyncio.sleep(60)
+            await self.run_pending_jobs()
+            await asyncio.sleep(self._tick_interval_seconds)
 
     async def pending_jobs(self, session: AsyncSession) -> list[JobRecord]:
         result = await session.exec(select(JobRecord).where(JobRecord.status == "queued"))
         return list(result)
+
+    async def run_pending_jobs(self) -> None:
+        async with sessionmanager.session() as session:
+            jobs = await self.pending_jobs(session)
+            for job in jobs:
+                await self._run_single_job(session, job)
+
+    async def _run_single_job(self, session: AsyncSession, job: JobRecord) -> None:
+        from app.tracking.service import TrackingError, process_check_updates_job
+
+        await mark_job_started(session, job)
+        client = RanobeLibClient()
+        try:
+            if job.type == "check_updates":
+                result = await process_check_updates_job(session, client, job)
+            else:
+                raise TrackingError(f"Unsupported job type: {job.type}")
+            await mark_job_finished(session, job, status="completed", result=result)
+        except Exception as exc:
+            logger.exception("Job execution failed", extra={"job_id": job.id, "job_type": job.type})
+            await mark_job_finished(session, job, status="failed", error_message=str(exc))
+        finally:
+            await client.close()
 
 
 job_runtime = JobRuntime()
