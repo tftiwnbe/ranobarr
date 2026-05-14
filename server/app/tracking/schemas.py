@@ -44,3 +44,21 @@ class TrackedBookSummary(BaseModel):
     enabled: bool
     last_checked_at: datetime | None
     last_remote_chapter_key: str | None
+
+
+class ChapterSnapshotSummary(BaseModel):
+    chapter_key: str
+    volume: str
+    number: str
+    title: str | None
+    branch_id: str | None
+    branch_name: str | None
+    ordinal_index: int
+
+
+class TrackedBookDetail(TrackedBookSummary):
+    source_url: str
+    author: str | None
+    summary: str | None
+    cover_url: str | None
+    snapshots: list[ChapterSnapshotSummary]

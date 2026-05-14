@@ -15,7 +15,14 @@ from app.ranobelib import (
     get_default_branch_chapters,
     get_formatted_branches_with_teams,
 )
-from .schemas import BranchSummary, TrackBookRequest, TrackBookResponse, TrackedBookSummary
+from .schemas import (
+    BranchSummary,
+    ChapterSnapshotSummary,
+    TrackBookRequest,
+    TrackBookResponse,
+    TrackedBookDetail,
+    TrackedBookSummary,
+)
 
 
 class TrackingError(RuntimeError):
@@ -302,6 +309,57 @@ async def list_tracked_books(session: AsyncSession) -> list[TrackedBookSummary]:
         )
         for book, rule, state in rows
     ]
+
+
+async def get_tracked_book_detail(session: AsyncSession, book_id: str) -> TrackedBookDetail | None:
+    query = (
+        select(Book, TrackRule, BookState)
+        .join(TrackRule, TrackRule.book_id == Book.id)
+        .join(BookState, BookState.book_id == Book.id)
+        .where(Book.id == book_id)
+    )
+    result = await session.exec(query)
+    row = result.one_or_none()
+    if row is None:
+        return None
+
+    book, rule, state = row
+    snapshots_result = await session.exec(
+        select(ChapterSnapshot)
+        .where(ChapterSnapshot.book_id == book.id)
+        .order_by(ChapterSnapshot.ordinal_index.asc())
+    )
+    snapshots = snapshots_result.all()
+
+    return TrackedBookDetail(
+        book_id=book.id,
+        slug=book.slug,
+        title=book.title,
+        source_url=book.source_url,
+        author=book.author,
+        summary=book.summary,
+        cover_url=book.cover_url,
+        available_chapters=book.available_chapters,
+        known_remote_chapters=len(snapshots),
+        branch_mode=rule.branch_mode,
+        selected_branch_id=rule.selected_branch_id,
+        selected_branch_label=rule.selected_branch_label,
+        enabled=rule.enabled,
+        last_checked_at=state.last_checked_at,
+        last_remote_chapter_key=state.last_remote_chapter_key,
+        snapshots=[
+            ChapterSnapshotSummary(
+                chapter_key=snapshot.chapter_key,
+                volume=snapshot.volume,
+                number=snapshot.number,
+                title=snapshot.title,
+                branch_id=snapshot.branch_id,
+                branch_name=snapshot.branch_name,
+                ordinal_index=snapshot.ordinal_index,
+            )
+            for snapshot in snapshots
+        ],
+    )
 
 
 async def count_chapter_snapshots(session: AsyncSession, book_id: str) -> int:
