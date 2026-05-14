@@ -6,6 +6,7 @@ from typing import Any
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.errors import TrackingError
 from app.core.jobs import enqueue_job
 from app.models import Book, BookState, ChapterSnapshot, JobRecord, TrackRule
 from app.ranobelib import (
@@ -23,11 +24,6 @@ from .schemas import (
     TrackedBookDetail,
     TrackedBookSummary,
 )
-
-
-class TrackingError(RuntimeError):
-    pass
-
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)

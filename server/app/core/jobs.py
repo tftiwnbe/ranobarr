@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.builds.service import build_book_artifact
 from app.core.database import sessionmanager
+from app.core.errors import TrackingError
 from app.models import JobRecord
 from app.ranobelib import RanobeLibClient
 
@@ -108,13 +110,17 @@ class JobRuntime:
                 await self._run_single_job(session, job)
 
     async def _run_single_job(self, session: AsyncSession, job: JobRecord) -> None:
-        from app.tracking.service import TrackingError, process_check_updates_job
+        from app.tracking.service import process_check_updates_job
 
         await mark_job_started(session, job)
         client = RanobeLibClient()
         try:
             if job.type == "check_updates":
                 result = await process_check_updates_job(session, client, job)
+            elif job.type == "build_artifact":
+                if not job.book_id:
+                    raise TrackingError("Build job is missing a book_id")
+                result = await build_book_artifact(session, client, book_id=job.book_id)
             else:
                 raise TrackingError(f"Unsupported job type: {job.type}")
             await mark_job_finished(session, job, status="completed", result=result)

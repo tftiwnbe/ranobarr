@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.jobs import enqueue_job
 from app.core.database import get_database_session
+from app.core.errors import TrackingError
+from app.core.jobs import enqueue_job
 from app.ranobelib import RanobeLibClient
 from .schemas import TrackBookRequest, TrackBookResponse, TrackedBookDetail, TrackedBookSummary
-from .service import TrackingError, get_tracked_book_detail, list_tracked_books, track_book
+from .service import get_tracked_book_detail, list_tracked_books, track_book
 
 router = APIRouter(prefix="/api/v1/tracking", tags=["tracking"])
 
