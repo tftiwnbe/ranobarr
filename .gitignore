@@ -1,0 +1,19 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+data/
+server/.coverage
+server/htmlcov/
+
+# Reference projects gathered for investigation. Keep them out of the new repo.
+/Archive-ranobelib-userscript/
+/DownloadLib/
+/Ranobe2ebook/
+/ranobelib-downloader/
+/ranobelib-parser/
