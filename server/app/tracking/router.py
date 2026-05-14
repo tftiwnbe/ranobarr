@@ -69,3 +69,25 @@ async def check_tracked_book_now(
         },
     )
     return {"job_id": job.job_id, "status": job.status}
+
+
+@router.post("/books/{book_id}/build", status_code=status.HTTP_202_ACCEPTED)
+async def build_tracked_book_now(
+    book_id: str,
+    session: AsyncSession = Depends(get_database_session),
+) -> dict[str, str]:
+    detail = await get_tracked_book_detail(session, book_id)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked book not found")
+
+    job = await enqueue_job(
+        session,
+        job_type="build_artifact",
+        book_id=book_id,
+        payload={
+            "slug": detail.slug,
+            "branch_mode": detail.branch_mode,
+            "selected_branch_id": detail.selected_branch_id,
+        },
+    )
+    return {"job_id": job.job_id, "status": job.status}

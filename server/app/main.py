@@ -5,6 +5,7 @@ from typing import Callable
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.artifacts.router import router as artifacts_router
 from app.config import get_settings
 from app.core.database import run_async_upgrade, sessionmanager
 from app.core.jobs import job_runtime
@@ -57,6 +58,7 @@ async def add_security_headers(request: Request, call_next: Callable) -> Respons
 
 
 app.include_router(system_router)
+app.include_router(artifacts_router)
 app.include_router(jobs_router)
 app.include_router(tracking_router)
 

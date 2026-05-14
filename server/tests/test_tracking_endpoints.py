@@ -43,3 +43,9 @@ async def test_jobs_endpoint_empty(client) -> None:
     response = await client.get("/api/v1/jobs")
     assert response.status_code == 200
     assert response.json() == []
+
+
+async def test_artifacts_endpoint_empty(client) -> None:
+    response = await client.get("/api/v1/artifacts")
+    assert response.status_code == 200
+    assert response.json() == []
