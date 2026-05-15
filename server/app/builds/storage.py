@@ -20,6 +20,10 @@ def artifact_file_path(relative_path: str) -> Path:
     return get_settings().app.data_dir / relative_path
 
 
+def asset_file_path(relative_path: str) -> Path:
+    return get_settings().app.data_dir / relative_path
+
+
 def write_chapter_cache(book_id: str, chapter_key: str, payload: dict[str, Any]) -> str:
     settings = get_settings()
     chapter_dir = settings.app.cache_dir / "chapters" / book_id
@@ -46,4 +50,15 @@ def write_epub_artifact(book_id: str, content: bytes) -> str:
     filename = f"book-{utcnow().strftime('%Y%m%d%H%M%S')}.epub"
     file_path = artifact_dir / filename
     file_path.write_bytes(content)
+    return str(file_path.relative_to(settings.app.data_dir))
+
+
+def write_binary_asset(original_name: str, content_hash: str, content: bytes) -> str:
+    settings = get_settings()
+    ext = Path(original_name).suffix or ".bin"
+    assets_dir = settings.app.cache_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    file_path = assets_dir / f"{content_hash}{ext}"
+    if not file_path.exists():
+        file_path.write_bytes(content)
     return str(file_path.relative_to(settings.app.data_dir))

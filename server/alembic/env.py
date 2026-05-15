@@ -7,7 +7,7 @@ from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
 from app.config import get_settings
-from app.models import Artifact, Book, BookState, ChapterContentCache, ChapterSnapshot, JobRecord, TrackRule  # noqa: F401
+from app.models import Artifact, BinaryAssetCache, Book, BookState, ChapterContentCache, ChapterSnapshot, JobRecord, TrackRule  # noqa: F401
 
 config = context.config
 

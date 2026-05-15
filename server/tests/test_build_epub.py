@@ -1,5 +1,6 @@
 from app.builds.content import NormalizedChapter
-from app.builds.epub import asset_filename_from_url, chapter_title_text, resolve_asset_url
+from app.builds.epub import chapter_title_text
+from app.builds.media import asset_filename_from_url, resolve_asset_url
 
 
 def test_resolve_asset_url() -> None:

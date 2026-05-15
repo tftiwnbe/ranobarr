@@ -11,6 +11,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.builds.content import NormalizedChapter, load_cached_payload, normalize_cached_payload
+from app.builds.assets import collect_asset_urls, ensure_binary_assets_cached
 from app.builds.epub import build_epub_bytes
 from app.builds.storage import (
     artifact_file_path,
@@ -215,6 +216,10 @@ async def build_book_artifact(
         summary=book.summary,
         cover_url=book.cover_url,
         chapters=normalized_chapters,
+        binary_assets=await ensure_binary_assets_cached(
+            session,
+            collect_asset_urls((chapter.html_content for chapter in normalized_chapters), cover_url=book.cover_url),
+        ),
     )
     epub_relative_path = write_epub_artifact(book.id, epub_bytes)
     epub_artifact = await create_artifact_record(
