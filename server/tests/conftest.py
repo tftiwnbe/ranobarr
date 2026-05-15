@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.config import get_settings
 from app.core.database import get_database_session
 from app.main import app
 
@@ -49,3 +50,25 @@ async def client(db: AsyncSession) -> AsyncClient:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as async_client:
         yield async_client
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def temp_data_dir(tmp_path):
+    settings = get_settings()
+    original_data_dir = settings.app.data_dir
+    original_artifacts_dir_name = settings.app.artifacts_dir_name
+    original_cache_dir_name = settings.app.cache_dir_name
+    original_temp_dir_name = settings.app.temp_dir_name
+
+    settings.app.data_dir = tmp_path / "data"
+    settings.app.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.app.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    settings.app.cache_dir.mkdir(parents=True, exist_ok=True)
+    settings.app.temp_dir.mkdir(parents=True, exist_ok=True)
+
+    yield settings.app.data_dir
+
+    settings.app.data_dir = original_data_dir
+    settings.app.artifacts_dir_name = original_artifacts_dir_name
+    settings.app.cache_dir_name = original_cache_dir_name
+    settings.app.temp_dir_name = original_temp_dir_name
