@@ -1,3 +1,4 @@
+from app.models import Artifact, Book
 from app.tracking.service import branch_id_of, chapter_key, select_chapters_for_rule
 
 
@@ -66,3 +67,51 @@ async def test_source_auth_crud(client) -> None:
 
     response = await client.delete("/api/v1/source-auth/ranobelib")
     assert response.status_code == 204
+
+
+async def test_latest_artifact_endpoint_empty_for_unknown_book(client) -> None:
+    response = await client.get("/api/v1/artifacts/books/missing/latest")
+    assert response.status_code == 404
+
+
+async def test_latest_artifact_endpoint_returns_newest_match(client, db) -> None:
+    book = Book(
+        slug="artifact-book",
+        source_url="https://ranobelib.me/ru/book/artifact-book",
+        title="Artifact Book",
+        available_chapters=1,
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    older = Artifact(
+        book_id=book.id,
+        format="epub",
+        relative_path="artifacts/old.epub",
+        chapter_count=1,
+        file_size_bytes=100,
+    )
+    newer = Artifact(
+        book_id=book.id,
+        format="epub",
+        relative_path="artifacts/new.epub",
+        chapter_count=2,
+        file_size_bytes=200,
+    )
+    manifest = Artifact(
+        book_id=book.id,
+        format="manifest",
+        relative_path="artifacts/new.json",
+        chapter_count=2,
+        file_size_bytes=80,
+    )
+    db.add(older)
+    await db.commit()
+    db.add(newer)
+    db.add(manifest)
+    await db.commit()
+
+    response = await client.get(f"/api/v1/artifacts/books/{book.id}/latest?format=epub")
+    assert response.status_code == 200
+    assert response.json()["relative_path"] == "artifacts/new.epub"
