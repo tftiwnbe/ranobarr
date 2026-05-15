@@ -10,6 +10,15 @@ from typing import Any
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.builds.content import NormalizedChapter, load_cached_payload, normalize_cached_payload
+from app.builds.epub import build_epub_bytes
+from app.builds.storage import (
+    artifact_file_path,
+    cache_file_path,
+    write_artifact_manifest,
+    write_chapter_cache,
+    write_epub_artifact,
+)
 from app.config import get_settings
 from app.core.errors import TrackingError
 from app.models import Artifact, Book, BookState, ChapterContentCache, ChapterSnapshot, TrackRule
@@ -48,6 +57,12 @@ class CachedChapterResult:
     content_type: str
 
 
+@dataclass(slots=True)
+class ArtifactWriteResult:
+    artifact: Artifact
+    file_path: Path
+
+
 async def build_book_artifact(
     session: AsyncSession,
     client: RanobeLibClient,
@@ -83,6 +98,7 @@ async def build_book_artifact(
     existing_cache = {cache.chapter_key: cache for cache in content_cache_result.all()}
 
     cached_results: list[CachedChapterResult] = []
+    normalized_chapters: list[NormalizedChapter] = []
     fetched_count = 0
     reused_count = 0
 
@@ -97,6 +113,10 @@ async def build_book_artifact(
                     content_hash=cache_entry.content_hash,
                     content_type=cache_entry.content_type,
                 )
+            )
+            payload = load_cached_payload(cache_entry.relative_path)
+            normalized_chapters.append(
+                normalize_cached_payload(payload, content_type=cache_entry.content_type)
             )
             continue
 
@@ -148,6 +168,7 @@ async def build_book_artifact(
                 content_type=content_type,
             )
         )
+        normalized_chapters.append(normalize_cached_payload(payload, content_type=content_type))
         fetched_count += 1
 
     manifest = {
@@ -179,58 +200,75 @@ async def build_book_artifact(
     }
 
     artifact_relative_path = write_artifact_manifest(book.id, manifest)
-    artifact_path = artifact_file_path(artifact_relative_path)
-    artifact_size = artifact_path.stat().st_size if artifact_path.exists() else 0
-
-    artifact = Artifact(
+    manifest_artifact = await create_artifact_record(
+        session,
         book_id=book.id,
-        format="manifest",
+        format_name="manifest",
         relative_path=artifact_relative_path,
         chapter_count=len(snapshots),
-        file_size_bytes=artifact_size,
     )
-    session.add(artifact)
+
+    epub_bytes = await build_epub_bytes(
+        identifier=f"ranobarr-{book.id}",
+        title=book.title,
+        author=book.author,
+        summary=book.summary,
+        cover_url=book.cover_url,
+        chapters=normalized_chapters,
+    )
+    epub_relative_path = write_epub_artifact(book.id, epub_bytes)
+    epub_artifact = await create_artifact_record(
+        session,
+        book_id=book.id,
+        format_name="epub",
+        relative_path=epub_relative_path,
+        chapter_count=len(normalized_chapters),
+    )
 
     state.last_built_chapter_key = state.last_remote_chapter_key
     state.last_built_at = utcnow()
     state.updated_at = utcnow()
     session.add(state)
     await session.commit()
-    await session.refresh(artifact)
 
     return {
         "book_id": book.id,
-        "artifact_id": artifact.id,
-        "artifact_format": artifact.format,
-        "artifact_path": artifact.relative_path,
+        "artifact_id": epub_artifact.id,
+        "artifact_format": epub_artifact.format,
+        "artifact_path": epub_artifact.relative_path,
         "chapter_count": len(snapshots),
         "fetched_chapter_count": fetched_count,
         "reused_cached_chapter_count": reused_count,
+        "artifacts": [
+            {
+                "id": manifest_artifact.id,
+                "format": manifest_artifact.format,
+                "path": manifest_artifact.relative_path,
+            },
+            {
+                "id": epub_artifact.id,
+                "format": epub_artifact.format,
+                "path": epub_artifact.relative_path,
+            },
+        ],
     }
-
-
-def cache_file_path(relative_path: str) -> Path:
-    return get_settings().app.data_dir / relative_path
-
-
-def artifact_file_path(relative_path: str) -> Path:
-    return get_settings().app.data_dir / relative_path
-
-
-def write_chapter_cache(book_id: str, chapter_key: str, payload: dict[str, Any]) -> str:
-    settings = get_settings()
-    chapter_dir = settings.app.cache_dir / "chapters" / book_id
-    chapter_dir.mkdir(parents=True, exist_ok=True)
-    file_path = chapter_dir / f"{chapter_key}.json"
-    file_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return str(file_path.relative_to(settings.app.data_dir))
-
-
-def write_artifact_manifest(book_id: str, payload: dict[str, Any]) -> str:
-    settings = get_settings()
-    artifact_dir = settings.app.artifacts_dir / book_id
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"manifest-{utcnow().strftime('%Y%m%d%H%M%S')}.json"
-    file_path = artifact_dir / filename
-    file_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return str(file_path.relative_to(settings.app.data_dir))
+async def create_artifact_record(
+    session: AsyncSession,
+    *,
+    book_id: str,
+    format_name: str,
+    relative_path: str,
+    chapter_count: int,
+) -> Artifact:
+    artifact_path = artifact_file_path(relative_path)
+    artifact_size = artifact_path.stat().st_size if artifact_path.exists() else 0
+    artifact = Artifact(
+        book_id=book_id,
+        format=format_name,
+        relative_path=relative_path,
+        chapter_count=chapter_count,
+        file_size_bytes=artifact_size,
+    )
+    session.add(artifact)
+    await session.flush()
+    return artifact

@@ -4,10 +4,9 @@ import html
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from app.builds.service import cache_file_path
+from app.builds.storage import cache_file_path
 from app.core.errors import TrackingError
 
 

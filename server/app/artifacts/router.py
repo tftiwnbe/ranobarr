@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.builds.service import artifact_file_path
+from app.builds.storage import artifact_file_path
 from app.core.database import get_database_session
 from app.models import Artifact, Book
 from .schemas import ArtifactSummary
