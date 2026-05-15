@@ -1,4 +1,4 @@
-from app.models import Artifact, Book
+from app.models import Artifact, Book, JobEvent, JobRecord
 from app.tracking.service import branch_id_of, chapter_key, select_chapters_for_rule
 
 
@@ -115,3 +115,27 @@ async def test_latest_artifact_endpoint_returns_newest_match(client, db) -> None
     response = await client.get(f"/api/v1/artifacts/books/{book.id}/latest?format=epub")
     assert response.status_code == 200
     assert response.json()["relative_path"] == "artifacts/new.epub"
+
+
+async def test_job_events_endpoint_returns_events(client, db) -> None:
+    job = JobRecord(type="check_updates", status="completed", payload_json="{}")
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    db.add(
+        JobEvent(
+            job_id=job.id,
+            level="info",
+            event_type="job.completed",
+            message="Job completed",
+            payload_json='{"ok":true}',
+        )
+    )
+    await db.commit()
+
+    response = await client.get(f"/api/v1/jobs/{job.id}/events")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["event_type"] == "job.completed"

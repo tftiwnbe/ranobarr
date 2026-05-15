@@ -69,6 +69,7 @@ async def build_book_artifact(
     client: RanobeLibClient,
     *,
     book_id: str,
+    event_logger=None,
 ) -> dict[str, Any]:
     book = await session.get(Book, book_id)
     if book is None:
@@ -92,6 +93,13 @@ async def build_book_artifact(
     snapshots = snapshots_result.all()
     if not snapshots:
         raise TrackingError("No chapter snapshots found for this book")
+    if event_logger:
+        await event_logger(
+            level="info",
+            event_type="build.snapshots_loaded",
+            message="Loaded chapter snapshots for build",
+            payload={"snapshot_count": len(snapshots)},
+        )
 
     content_cache_result = await session.exec(
         select(ChapterContentCache).where(ChapterContentCache.book_id == book.id)
@@ -172,6 +180,17 @@ async def build_book_artifact(
         normalized_chapters.append(normalize_cached_payload(payload, content_type=content_type))
         fetched_count += 1
 
+    if event_logger:
+        await event_logger(
+            level="info",
+            event_type="build.chapter_cache_ready",
+            message="Prepared chapter cache for build",
+            payload={
+                "fetched_chapter_count": fetched_count,
+                "reused_cached_chapter_count": reused_count,
+            },
+        )
+
     manifest = {
         "book": {
             "id": book.id,
@@ -209,6 +228,18 @@ async def build_book_artifact(
         chapter_count=len(snapshots),
     )
 
+    binary_assets = await ensure_binary_assets_cached(
+        session,
+        collect_asset_urls((chapter.html_content for chapter in normalized_chapters), cover_url=book.cover_url),
+    )
+    if event_logger:
+        await event_logger(
+            level="info",
+            event_type="build.binary_assets_ready",
+            message="Prepared binary assets for EPUB build",
+            payload={"binary_asset_count": len(binary_assets)},
+        )
+
     epub_bytes = await build_epub_bytes(
         identifier=f"ranobarr-{book.id}",
         title=book.title,
@@ -216,10 +247,7 @@ async def build_book_artifact(
         summary=book.summary,
         cover_url=book.cover_url,
         chapters=normalized_chapters,
-        binary_assets=await ensure_binary_assets_cached(
-            session,
-            collect_asset_urls((chapter.html_content for chapter in normalized_chapters), cover_url=book.cover_url),
-        ),
+        binary_assets=binary_assets,
     )
     epub_relative_path = write_epub_artifact(book.id, epub_bytes)
     epub_artifact = await create_artifact_record(
@@ -237,6 +265,16 @@ async def build_book_artifact(
     state.updated_at = utcnow()
     session.add(state)
     await session.commit()
+    if event_logger:
+        await event_logger(
+            level="info",
+            event_type="build.artifacts_written",
+            message="Wrote manifest and EPUB artifacts",
+            payload={
+                "manifest_path": manifest_artifact.relative_path,
+                "epub_path": epub_artifact.relative_path,
+            },
+        )
 
     return {
         "book_id": book.id,

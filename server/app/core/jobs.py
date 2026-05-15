@@ -11,6 +11,7 @@ from app.builds.service import build_book_artifact
 from app.core.database import sessionmanager
 from app.core.errors import TrackingError
 from app.models import JobRecord
+from app.jobs.service import log_job_event
 from app.source_auth.service import make_ranobelib_client
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,15 @@ async def enqueue_job(
         payload_json=json.dumps(payload or {}, ensure_ascii=False),
     )
     session.add(record)
+    await session.flush()
+    await log_job_event(
+        session,
+        job_id=record.id,
+        level="info",
+        event_type="job.queued",
+        message=f"Queued {job_type} job",
+        payload=payload or {},
+    )
     await session.commit()
     await session.refresh(record)
     return EnqueueJobResult(job_id=record.id, status=record.status)
@@ -50,6 +60,13 @@ async def mark_job_started(session: AsyncSession, job: JobRecord) -> JobRecord:
     job.status = "running"
     job.started_at = utcnow()
     session.add(job)
+    await log_job_event(
+        session,
+        job_id=job.id,
+        level="info",
+        event_type="job.started",
+        message=f"Started {job.type} job",
+    )
     await session.commit()
     await session.refresh(job)
     return job
@@ -68,6 +85,14 @@ async def mark_job_finished(
     job.result_json = json.dumps(result or {}, ensure_ascii=False) if result is not None else None
     job.error_message = error_message
     session.add(job)
+    await log_job_event(
+        session,
+        job_id=job.id,
+        level="error" if status == "failed" else "info",
+        event_type=f"job.{status}",
+        message=f"Job {status}",
+        payload=result if status != "failed" else {"error_message": error_message},
+    )
     await session.commit()
     await session.refresh(job)
     return job
@@ -115,12 +140,43 @@ class JobRuntime:
         await mark_job_started(session, job)
         client = await make_ranobelib_client(session)
         try:
+            await log_job_event(
+                session,
+                job_id=job.id,
+                level="info",
+                event_type="job.client_ready",
+                message="Prepared RanobeLib client",
+            )
             if job.type == "check_updates":
-                result = await process_check_updates_job(session, client, job)
+                await log_job_event(
+                    session,
+                    job_id=job.id,
+                    level="info",
+                    event_type="job.check_updates",
+                    message="Checking remote chapter updates",
+                )
+                result = await process_check_updates_job(
+                    session,
+                    client,
+                    job,
+                    event_logger=lambda **kwargs: log_job_event(session, job_id=job.id, **kwargs),
+                )
             elif job.type == "build_artifact":
                 if not job.book_id:
                     raise TrackingError("Build job is missing a book_id")
-                result = await build_book_artifact(session, client, book_id=job.book_id)
+                await log_job_event(
+                    session,
+                    job_id=job.id,
+                    level="info",
+                    event_type="job.build_artifact",
+                    message="Building artifacts from cached chapters",
+                )
+                result = await build_book_artifact(
+                    session,
+                    client,
+                    book_id=job.book_id,
+                    event_logger=lambda **kwargs: log_job_event(session, job_id=job.id, **kwargs),
+                )
             else:
                 raise TrackingError(f"Unsupported job type: {job.type}")
             await mark_job_finished(session, job, status="completed", result=result)

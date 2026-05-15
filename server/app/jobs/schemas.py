@@ -17,3 +17,13 @@ class JobSummary(BaseModel):
 class JobDetail(JobSummary):
     payload_json: str | None
     result_json: str | None
+
+
+class JobEventView(BaseModel):
+    id: str
+    job_id: str
+    level: str
+    event_type: str
+    message: str
+    payload_json: str | None
+    created_at: datetime

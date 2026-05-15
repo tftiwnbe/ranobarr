@@ -367,6 +367,7 @@ async def process_check_updates_job(
     session: AsyncSession,
     client: RanobeLibClient,
     job: JobRecord,
+    event_logger=None,
 ) -> dict[str, Any]:
     if not job.book_id:
         raise TrackingError("Update-check job is missing a book_id")
@@ -386,6 +387,13 @@ async def process_check_updates_job(
         state = BookState(book_id=book.id)
 
     chapters_data = await client.get_novel_chapters(book.slug)
+    if event_logger:
+        await event_logger(
+            level="info",
+            event_type="tracking.remote_fetched",
+            message="Fetched remote chapter list",
+            payload={"remote_chapter_count": len(chapters_data)},
+        )
     selected_chapters = select_chapters_for_rule(
         chapters_data,
         branch_mode=rule.branch_mode,
@@ -399,6 +407,17 @@ async def process_check_updates_job(
 
     new_keys = sorted(remote_keys - existing_keys)
     removed_keys = sorted(existing_keys - remote_keys)
+    if event_logger:
+        await event_logger(
+            level="info",
+            event_type="tracking.snapshot_diff",
+            message="Computed chapter snapshot diff",
+            payload={
+                "selected_chapter_count": len(selected_chapters),
+                "new_chapter_count": len(new_keys),
+                "removed_chapter_count": len(removed_keys),
+            },
+        )
 
     for chapter in selected_chapters:
         snapshot = existing_snapshots.get(chapter.chapter_key)

@@ -3,7 +3,7 @@ import json
 from sqlmodel import select
 
 from app.core.jobs import JobRuntime
-from app.models import Artifact, Book, BookState, ChapterContentCache, ChapterSnapshot, JobRecord, TrackRule
+from app.models import Artifact, Book, BookState, ChapterContentCache, ChapterSnapshot, JobEvent, JobRecord, TrackRule
 
 
 class FakeRanobeLibClient:
@@ -96,6 +96,12 @@ async def test_build_artifact_job_executes_and_persists_outputs(db, temp_data_di
 
     for artifact in artifacts:
         assert (temp_data_dir / artifact.relative_path).is_file()
+
+    events = (await db.exec(select(JobEvent).where(JobEvent.job_id == job.id))).all()
+    assert events
+    assert any(event.event_type == "job.started" for event in events)
+    assert any(event.event_type == "build.artifacts_written" for event in events)
+    assert any(event.event_type == "job.completed" for event in events)
 
 
 async def test_build_artifact_retention_keeps_latest_two_per_format(db, temp_data_dir, monkeypatch) -> None:
