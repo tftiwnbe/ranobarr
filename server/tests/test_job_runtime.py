@@ -96,3 +96,64 @@ async def test_build_artifact_job_executes_and_persists_outputs(db, temp_data_di
 
     for artifact in artifacts:
         assert (temp_data_dir / artifact.relative_path).is_file()
+
+
+async def test_build_artifact_retention_keeps_latest_two_per_format(db, temp_data_dir, monkeypatch) -> None:
+    async def fake_make_ranobelib_client(session):
+        return FakeRanobeLibClient()
+
+    monkeypatch.setattr("app.core.jobs.make_ranobelib_client", fake_make_ranobelib_client)
+
+    book = Book(
+        slug="retention-slug",
+        source_url="https://ranobelib.me/ru/book/retention-slug",
+        title="Retention Title",
+        author="Author",
+        summary="Summary",
+        available_chapters=1,
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    db.add(TrackRule(book_id=book.id, branch_mode="default"))
+    db.add(BookState(book_id=book.id, last_remote_chapter_key="v1_ch1"))
+    db.add(
+        ChapterSnapshot(
+            book_id=book.id,
+            chapter_key="v1_ch1",
+            volume="1",
+            number="1",
+            title="Only",
+            branch_id="7",
+            branch_name="Branch 7",
+            ordinal_index=1,
+        )
+    )
+    await db.commit()
+
+    runtime = JobRuntime()
+    seen_paths: set[str] = set()
+
+    for _ in range(3):
+        job = JobRecord(type="build_artifact", status="queued", book_id=book.id, payload_json=json.dumps({}))
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        await runtime._run_single_job(db, job)
+        await db.refresh(job)
+        artifacts = (await db.exec(select(Artifact).where(Artifact.book_id == book.id))).all()
+        seen_paths.update(artifact.relative_path for artifact in artifacts)
+
+    artifacts = (await db.exec(select(Artifact).where(Artifact.book_id == book.id))).all()
+    assert len(artifacts) == 4
+    counts: dict[str, int] = {}
+    retained_paths = {artifact.relative_path for artifact in artifacts}
+    for artifact in artifacts:
+        counts[artifact.format] = counts.get(artifact.format, 0) + 1
+        assert (temp_data_dir / artifact.relative_path).is_file()
+    assert counts == {"manifest": 2, "epub": 2}
+    pruned_paths = seen_paths - retained_paths
+    assert pruned_paths
+    for path in pruned_paths:
+        assert not (temp_data_dir / path).exists()

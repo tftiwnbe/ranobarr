@@ -230,6 +230,8 @@ async def build_book_artifact(
         chapter_count=len(normalized_chapters),
     )
 
+    await cleanup_old_artifacts(session, book_id=book.id)
+
     state.last_built_chapter_key = state.last_remote_chapter_key
     state.last_built_at = utcnow()
     state.updated_at = utcnow()
@@ -277,3 +279,23 @@ async def create_artifact_record(
     session.add(artifact)
     await session.flush()
     return artifact
+
+
+async def cleanup_old_artifacts(session: AsyncSession, *, book_id: str) -> None:
+    keep_per_format = get_settings().app.build_artifact_retention_per_format
+    result = await session.exec(
+        select(Artifact)
+        .where(Artifact.book_id == book_id)
+        .order_by(Artifact.format.asc(), Artifact.created_at.desc(), Artifact.id.desc())
+    )
+    artifacts = result.all()
+
+    grouped: dict[str, list[Artifact]] = {}
+    for artifact in artifacts:
+        grouped.setdefault(artifact.format, []).append(artifact)
+
+    for format_name, format_artifacts in grouped.items():
+        for artifact in format_artifacts[keep_per_format:]:
+            artifact_path = artifact_file_path(artifact.relative_path)
+            artifact_path.unlink(missing_ok=True)
+            await session.delete(artifact)

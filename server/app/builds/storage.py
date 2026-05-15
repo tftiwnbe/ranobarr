@@ -37,7 +37,7 @@ def write_artifact_manifest(book_id: str, payload: dict[str, Any]) -> str:
     settings = get_settings()
     artifact_dir = settings.app.artifacts_dir / book_id
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"manifest-{utcnow().strftime('%Y%m%d%H%M%S')}.json"
+    filename = f"manifest-{utcnow().strftime('%Y%m%d%H%M%S%f')}.json"
     file_path = artifact_dir / filename
     file_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(file_path.relative_to(settings.app.data_dir))
@@ -47,7 +47,7 @@ def write_epub_artifact(book_id: str, content: bytes) -> str:
     settings = get_settings()
     artifact_dir = settings.app.artifacts_dir / book_id
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"book-{utcnow().strftime('%Y%m%d%H%M%S')}.epub"
+    filename = f"book-{utcnow().strftime('%Y%m%d%H%M%S%f')}.epub"
     file_path = artifact_dir / filename
     file_path.write_bytes(content)
     return str(file_path.relative_to(settings.app.data_dir))

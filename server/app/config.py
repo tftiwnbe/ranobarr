@@ -27,6 +27,7 @@ class AppConfig(RanobarrBaseSettings):
     artifacts_dir_name: str = "artifacts"
     cache_dir_name: str = "cache"
     temp_dir_name: str = "tmp"
+    build_artifact_retention_per_format: int = 2
     cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:5173"])
     cors_allow_origin_regex: str | None = None
     cors_allow_credentials: bool = True
