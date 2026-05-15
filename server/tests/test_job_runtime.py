@@ -18,7 +18,10 @@ class FakeRanobeLibClient:
 
 
 async def test_build_artifact_job_executes_and_persists_outputs(db, temp_data_dir, monkeypatch) -> None:
-    monkeypatch.setattr("app.core.jobs.RanobeLibClient", FakeRanobeLibClient)
+    async def fake_make_ranobelib_client(session):
+        return FakeRanobeLibClient()
+
+    monkeypatch.setattr("app.core.jobs.make_ranobelib_client", fake_make_ranobelib_client)
 
     book = Book(
         slug="test-slug",

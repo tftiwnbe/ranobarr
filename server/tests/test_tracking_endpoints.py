@@ -49,3 +49,20 @@ async def test_artifacts_endpoint_empty(client) -> None:
     response = await client.get("/api/v1/artifacts")
     assert response.status_code == 200
     assert response.json() == []
+
+
+async def test_source_auth_crud(client) -> None:
+    response = await client.get("/api/v1/source-auth/ranobelib")
+    assert response.status_code == 200
+    assert response.json() is None
+
+    response = await client.put(
+        "/api/v1/source-auth/ranobelib",
+        json={"access_token": "token-a", "refresh_token": "token-r"},
+    )
+    assert response.status_code == 200
+    assert response.json()["has_access_token"] is True
+    assert response.json()["has_refresh_token"] is True
+
+    response = await client.delete("/api/v1/source-auth/ranobelib")
+    assert response.status_code == 204

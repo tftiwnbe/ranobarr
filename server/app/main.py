@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.core.database import run_async_upgrade, sessionmanager
 from app.core.jobs import job_runtime
 from app.jobs.router import router as jobs_router
+from app.source_auth.router import router as source_auth_router
 from app.system.router import router as system_router
 from app.tracking.router import router as tracking_router
 
@@ -60,6 +61,7 @@ async def add_security_headers(request: Request, call_next: Callable) -> Respons
 app.include_router(system_router)
 app.include_router(artifacts_router)
 app.include_router(jobs_router)
+app.include_router(source_auth_router)
 app.include_router(tracking_router)
 
 

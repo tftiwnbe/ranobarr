@@ -5,6 +5,7 @@ from app.core.database import get_database_session
 from app.core.errors import TrackingError
 from app.core.jobs import enqueue_job
 from app.ranobelib import RanobeLibClient
+from app.source_auth.service import make_ranobelib_client
 from .schemas import TrackBookRequest, TrackBookResponse, TrackedBookDetail, TrackedBookSummary
 from .service import get_tracked_book_detail, list_tracked_books, track_book
 
@@ -12,7 +13,13 @@ router = APIRouter(prefix="/api/v1/tracking", tags=["tracking"])
 
 
 async def get_ranobelib_client() -> RanobeLibClient:
-    client = RanobeLibClient()
+    raise RuntimeError("db-backed dependency required")
+
+
+async def get_authorized_ranobelib_client(
+    session: AsyncSession = Depends(get_database_session),
+):
+    client = await make_ranobelib_client(session)
     try:
         yield client
     finally:
@@ -23,7 +30,7 @@ async def get_ranobelib_client() -> RanobeLibClient:
 async def create_tracked_book(
     request: TrackBookRequest,
     session: AsyncSession = Depends(get_database_session),
-    client: RanobeLibClient = Depends(get_ranobelib_client),
+    client: RanobeLibClient = Depends(get_authorized_ranobelib_client),
 ) -> TrackBookResponse:
     try:
         return await track_book(session, client, request)

@@ -11,7 +11,7 @@ from app.builds.service import build_book_artifact
 from app.core.database import sessionmanager
 from app.core.errors import TrackingError
 from app.models import JobRecord
-from app.ranobelib import RanobeLibClient
+from app.source_auth.service import make_ranobelib_client
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class JobRuntime:
         from app.tracking.service import process_check_updates_job
 
         await mark_job_started(session, job)
-        client = RanobeLibClient()
+        client = await make_ranobelib_client(session)
         try:
             if job.type == "check_updates":
                 result = await process_check_updates_job(session, client, job)

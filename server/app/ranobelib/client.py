@@ -21,20 +21,40 @@ class RanobeLibClient:
     def __init__(self) -> None:
         self.api_url = "https://api.cdnlibs.org/api/manga"
         self.site_url = "https://ranobelib.me"
+        self._token_refresh_callback = None
         self._request_timestamps: deque[float] = deque()
         self._rate_lock = asyncio.Lock()
-        self._client = httpx.AsyncClient(
-            timeout=REQUEST_TIMEOUT,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Origin": self.site_url,
-                "Referer": f"{self.site_url}/",
-                "Site-Id": "3",
-            },
-        )
+        self._client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=self._default_headers())
+
+    def _default_headers(self) -> dict[str, str]:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Origin": self.site_url,
+            "Referer": f"{self.site_url}/",
+            "Site-Id": "3",
+        }
+        return headers
+
+    @property
+    def base_headers(self) -> dict[str, str]:
+        headers = self._default_headers()
+        if "Authorization" in self._client.headers:
+            headers["Authorization"] = str(self._client.headers["Authorization"])
+        return headers
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    def set_token(self, token: str) -> None:
+        token = token.strip()
+        if token:
+            self._client.headers["Authorization"] = f"Bearer {token}"
+
+    def clear_token(self) -> None:
+        self._client.headers.pop("Authorization", None)
+
+    def set_token_refresh_callback(self, callback) -> None:
+        self._token_refresh_callback = callback
 
     @staticmethod
     def extract_slug_from_url(url: str) -> str | None:
@@ -95,6 +115,10 @@ class RanobeLibClient:
             try:
                 await self._wait_for_rate_limit()
                 response = await self._client.get(url, params=params)
+                if response.status_code == 401 and self._token_refresh_callback:
+                    refreshed = await self._token_refresh_callback()
+                    if refreshed:
+                        response = await self._client.get(url, params=params)
                 if response.status_code >= 500:
                     raise RanobeLibError(f"RanobeLib server error {response.status_code}")
                 if response.status_code == 404:

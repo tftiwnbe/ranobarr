@@ -4,6 +4,7 @@ from .binary_assets import BinaryAssetCache
 from .artifacts import Artifact
 from .books import Book, BookState, TrackRule
 from .jobs import JobRecord
+from .source_credentials import SourceCredential
 
 __all__ = [
     "Artifact",
@@ -13,5 +14,6 @@ __all__ = [
     "ChapterSnapshot",
     "ChapterContentCache",
     "JobRecord",
+    "SourceCredential",
     "TrackRule",
 ]
