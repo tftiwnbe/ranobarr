@@ -15,3 +15,13 @@ class RanobeLibCredentialView(BaseModel):
     has_refresh_token: bool
     expires_at: datetime | None
     updated_at: datetime
+
+
+class RanobeLibCredentialValidation(BaseModel):
+    provider: str
+    valid: bool
+    authenticated: bool
+    user_id: str | None = None
+    username: str | None = None
+    email: str | None = None
+    error: str | None = None

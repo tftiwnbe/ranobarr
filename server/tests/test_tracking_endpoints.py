@@ -71,6 +71,44 @@ async def test_source_auth_crud(client) -> None:
     assert response.status_code == 204
 
 
+async def test_source_auth_validate_without_credentials(client) -> None:
+    response = await client.post("/api/v1/source-auth/ranobelib/validate")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["valid"] is False
+    assert payload["authenticated"] is False
+    assert payload["error"] == "No stored access token"
+
+
+async def test_source_auth_validate_with_remote_user(client, db, monkeypatch) -> None:
+    class FakeRanobeLibClient:
+        async def get_current_user(self):
+            return {"id": 42, "username": "reader", "email": "reader@example.com"}
+
+        async def close(self) -> None:
+            return None
+
+    async def fake_make_ranobelib_client(session):
+        return FakeRanobeLibClient()
+
+    monkeypatch.setattr("app.source_auth.service.make_ranobelib_client", fake_make_ranobelib_client)
+
+    response = await client.put(
+        "/api/v1/source-auth/ranobelib",
+        json={"access_token": "token-a", "refresh_token": "token-r"},
+    )
+    assert response.status_code == 200
+
+    response = await client.post("/api/v1/source-auth/ranobelib/validate")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["valid"] is True
+    assert payload["authenticated"] is True
+    assert payload["user_id"] == "42"
+    assert payload["username"] == "reader"
+    assert payload["email"] == "reader@example.com"
+
+
 async def test_latest_artifact_endpoint_empty_for_unknown_book(client) -> None:
     response = await client.get("/api/v1/artifacts/books/missing/latest")
     assert response.status_code == 404

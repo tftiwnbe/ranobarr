@@ -6,9 +6,10 @@ import httpx
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.errors import TrackingError
 from app.models import SourceCredential
-from app.ranobelib import RanobeLibClient
-from .schemas import RanobeLibCredentialUpsert, RanobeLibCredentialView
+from app.ranobelib import RanobeLibClient, RanobeLibError
+from .schemas import RanobeLibCredentialUpsert, RanobeLibCredentialValidation, RanobeLibCredentialView
 
 
 def utcnow() -> datetime:
@@ -96,3 +97,47 @@ async def refresh_ranobelib_token(session: AsyncSession, client: RanobeLibClient
     session.add(credential)
     await session.commit()
     return True
+
+
+async def validate_ranobelib_credential(session: AsyncSession) -> RanobeLibCredentialValidation:
+    credential = await get_ranobelib_credential(session)
+    if credential is None or not credential.access_token:
+        return RanobeLibCredentialValidation(
+            provider="ranobelib",
+            valid=False,
+            authenticated=False,
+            error="No stored access token",
+        )
+
+    client = await make_ranobelib_client(session)
+    try:
+        user_data = await client.get_current_user()
+    except (RanobeLibError, TrackingError) as exc:
+        return RanobeLibCredentialValidation(
+            provider="ranobelib",
+            valid=False,
+            authenticated=False,
+            error=str(exc),
+        )
+    finally:
+        await client.close()
+
+    if not user_data:
+        return RanobeLibCredentialValidation(
+            provider="ranobelib",
+            valid=False,
+            authenticated=False,
+            error="RanobeLib did not return user data",
+        )
+
+    user_id = user_data.get("id") or user_data.get("user_id")
+    username = user_data.get("name") or user_data.get("username") or user_data.get("login")
+    email = user_data.get("email")
+    return RanobeLibCredentialValidation(
+        provider="ranobelib",
+        valid=True,
+        authenticated=True,
+        user_id=str(user_id) if user_id is not None else None,
+        username=str(username) if username is not None else None,
+        email=str(email) if email is not None else None,
+    )

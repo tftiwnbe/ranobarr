@@ -109,6 +109,10 @@ class RanobeLibClient:
         data = await self._get_json(f"{self.api_url}/{slug}/chapter", params=params)
         return data.get("data", {})
 
+    async def get_current_user(self) -> dict[str, Any]:
+        data = await self._get_json("https://api.cdnlibs.org/api/auth/me")
+        return data.get("data", {})
+
     async def _get_json(self, url: str, params: Any = None) -> dict[str, Any]:
         last_error: Exception | None = None
         for attempt, delay in enumerate(RETRY_DELAYS, start=1):
