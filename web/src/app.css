@@ -260,10 +260,6 @@ a {
   top: 1rem;
 }
 
-.side-column .card + .card {
-  position: static;
-}
-
 .book-card {
   padding: 1rem;
 }
@@ -350,13 +346,52 @@ a {
   color: var(--text-soft);
 }
 
-.domain-mark {
-  margin-top: 1rem;
-  text-align: center;
+.tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.15rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0 0.55rem;
+  border: 0;
+  background: transparent;
   color: var(--text-ghost);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.tab:hover {
+  color: var(--text-soft);
+}
+
+.tab.active {
+  color: var(--text);
+}
+
+.tab.active::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--text-muted);
+}
+
+.tab-label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.tab-count {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 @keyframes spin-slow {

@@ -5,6 +5,7 @@
   import InputField from "./lib/components/InputField.svelte";
   import Panel from "./lib/components/Panel.svelte";
   import StarField from "./lib/components/StarField.svelte";
+  import Tabs, { type TabItem } from "./lib/components/Tabs.svelte";
   import {
     createTrackedBook,
     getCredential,
@@ -26,22 +27,23 @@
     latestArtifact: ArtifactSummary | null;
   };
 
-  let books: BookCard[] = [];
-  let jobs: JobSummary[] = [];
-  let credential: CredentialView | null = null;
-  let validation: CredentialValidation | null = null;
+  let books = $state<BookCard[]>([]);
+  let jobs = $state<JobSummary[]>([]);
+  let credential = $state<CredentialView | null>(null);
+  let validation = $state<CredentialValidation | null>(null);
 
-  let loading = true;
-  let submitting = false;
-  let validating = false;
-  let actionBookId: string | null = null;
-  let errorMessage = "";
-  let successMessage = "";
+  let loading = $state(true);
+  let submitting = $state(false);
+  let validating = $state(false);
+  let actionBookId = $state<string | null>(null);
+  let errorMessage = $state("");
+  let successMessage = $state("");
 
-  let accessToken = "";
-  let refreshToken = "";
-  let bookUrl = "";
-  let branchMode = "default";
+  let accessToken = $state("");
+  let refreshToken = $state("");
+  let bookUrl = $state("");
+  let branchMode = $state("default");
+  let sideTab = $state("track");
 
   async function loadDashboard() {
     loading = true;
@@ -154,6 +156,12 @@
     return `${(value / (1024 * 1024)).toFixed(1)} mb`;
   }
 
+  const sideTabs = $derived<TabItem[]>([
+    { value: "track", label: "track" },
+    { value: "auth", label: "auth" },
+    { value: "jobs", label: "jobs", count: jobs.length }
+  ]);
+
   onMount(loadDashboard);
 </script>
 
@@ -263,75 +271,85 @@
       </div>
 
       <div class="side-column">
-        <Panel eyebrow="tracking" title="add a title">
-          <form class="split-form" on:submit|preventDefault={submitBook}>
-            <InputField label="ranobelib url" bind:value={bookUrl} placeholder="https://ranobelib.me/ru/book/..." />
-            <label class="stack" style="gap:0.35rem;">
-              <span class="eyebrow">branch strategy</span>
-              <select bind:value={branchMode} style="width:100%;height:48px;padding:0 1rem;border:1px solid var(--line);background:var(--void-2);color:var(--text);">
-                <option value="default">default branch</option>
-                <option value="selected">selected branch later</option>
-              </select>
-            </label>
-            <Button type="submit" loading={submitting}>track title</Button>
-          </form>
-        </Panel>
-
-        <Panel eyebrow="source auth" title="ranobelib session" actionLabel={validating ? "checking..." : "validate"} actionDisabled={validating} onAction={runValidation}>
+        <Panel
+          eyebrow="controls"
+          title={sideTab === "track" ? "add a title" : sideTab === "auth" ? "ranobelib session" : "recent activity"}
+          actionLabel={sideTab === "auth" ? (validating ? "checking..." : "validate") : undefined}
+          actionDisabled={sideTab === "auth" ? validating : false}
+          onAction={sideTab === "auth" ? runValidation : undefined}
+        >
           <div class="stack">
-            <div class="status-grid">
-              <div class="status-card">
-                <div class="status-label">access token</div>
-                <div class:active={credential?.has_access_token} class="status-value">{credential?.has_access_token ? "stored" : "missing"}</div>
-              </div>
-              <div class="status-card">
-                <div class="status-label">refresh token</div>
-                <div class:active={credential?.has_refresh_token} class="status-value">{credential?.has_refresh_token ? "stored" : "missing"}</div>
-              </div>
-              <div class="status-card">
-                <div class="status-label">remote check</div>
-                <div class:active={validation?.valid} class="status-value">{validation?.valid ? "valid" : validation ? "failed" : "idle"}</div>
-              </div>
-            </div>
+            <Tabs tabs={sideTabs} value={sideTab} onValueChange={(value) => (sideTab = value)} />
 
-            {#if validation}
-              <div class="status-card">
-                <div class="status-label">validation</div>
-                <div class="meta-value">{validation.username ?? validation.email ?? validation.error}</div>
+            {#if sideTab === "track"}
+              <form class="split-form" onsubmit={(event) => {
+                event.preventDefault();
+                void submitBook();
+              }}>
+                <InputField label="ranobelib url" bind:value={bookUrl} placeholder="https://ranobelib.me/ru/book/..." />
+                <label class="stack" style="gap:0.35rem;">
+                  <span class="eyebrow">branch strategy</span>
+                  <select bind:value={branchMode} style="width:100%;height:48px;padding:0 1rem;border:1px solid var(--line);background:var(--void-2);color:var(--text);">
+                    <option value="default">default branch</option>
+                    <option value="selected">selected branch later</option>
+                  </select>
+                </label>
+                <Button type="submit" loading={submitting}>track title</Button>
+              </form>
+            {:else if sideTab === "auth"}
+              <div class="status-grid">
+                <div class="status-card">
+                  <div class="status-label">access token</div>
+                  <div class:active={credential?.has_access_token} class="status-value">{credential?.has_access_token ? "stored" : "missing"}</div>
+                </div>
+                <div class="status-card">
+                  <div class="status-label">refresh token</div>
+                  <div class:active={credential?.has_refresh_token} class="status-value">{credential?.has_refresh_token ? "stored" : "missing"}</div>
+                </div>
+                <div class="status-card">
+                  <div class="status-label">remote check</div>
+                  <div class:active={validation?.valid} class="status-value">{validation?.valid ? "valid" : validation ? "failed" : "idle"}</div>
+                </div>
               </div>
+
+              {#if validation}
+                <div class="status-card">
+                  <div class="status-label">validation</div>
+                  <div class="meta-value">{validation.username ?? validation.email ?? validation.error}</div>
+                </div>
+              {/if}
+
+              <form class="split-form" onsubmit={(event) => {
+                event.preventDefault();
+                void saveCredential();
+              }}>
+                <InputField label="access token" bind:value={accessToken} multiline={true} placeholder="paste bearer token" />
+                <InputField label="refresh token" bind:value={refreshToken} multiline={true} placeholder="paste refresh token" />
+                <Button type="submit" loading={submitting}>save tokens</Button>
+              </form>
+            {:else}
+              {#if jobs.length === 0}
+                <div class="empty-state">no jobs recorded yet</div>
+              {:else}
+                <div class="job-list">
+                  {#each jobs as job}
+                    <article class="list-row">
+                      <div>
+                        <div class="eyebrow">{job.type}</div>
+                        <strong>{job.status}</strong>
+                      </div>
+                      <div style="text-align:right;">
+                        <p class="muted">{job.book_id ?? "global job"}</p>
+                        <div class="dim">{formatDate(job.created_at)}</div>
+                      </div>
+                    </article>
+                  {/each}
+                </div>
+              {/if}
             {/if}
-
-            <form class="split-form" on:submit|preventDefault={saveCredential}>
-              <InputField label="access token" bind:value={accessToken} multiline={true} placeholder="paste bearer token" />
-              <InputField label="refresh token" bind:value={refreshToken} multiline={true} placeholder="paste refresh token" />
-              <Button type="submit" loading={submitting}>save tokens</Button>
-            </form>
           </div>
-        </Panel>
-
-        <Panel eyebrow="jobs" title="recent activity">
-          {#if jobs.length === 0}
-            <div class="empty-state">no jobs recorded yet</div>
-          {:else}
-            <div class="job-list">
-              {#each jobs as job}
-                <article class="list-row">
-                  <div>
-                    <div class="eyebrow">{job.type}</div>
-                    <strong>{job.status}</strong>
-                  </div>
-                  <div style="text-align:right;">
-                    <p class="muted">{job.book_id ?? "global job"}</p>
-                    <div class="dim">{formatDate(job.created_at)}</div>
-                  </div>
-                </article>
-              {/each}
-            </div>
-          {/if}
         </Panel>
       </div>
     </section>
-
-    <div class="domain-mark">hmphin.space inspired layout</div>
   </main>
 </div>
