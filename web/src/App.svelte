@@ -3,19 +3,22 @@
   import ToastContainer from "./lib/components/ToastContainer.svelte";
   import { toast } from "./lib/components/toast-store.svelte";
   import {
+    type BranchSummary,
     createTrackedBook,
     getCredential,
     latestArtifact,
     listJobs,
     listTrackedBooks,
+    previewTrackedBook,
     putCredential,
-    triggerBuild,
     triggerCheck,
+    updateTrackedBookBranch,
     validateCredential,
     type ArtifactSummary,
     type CredentialValidation,
     type CredentialView,
     type JobSummary,
+    type PreviewBook,
     type TrackedBook,
   } from "./lib/api";
 
@@ -30,13 +33,15 @@
   let loading = $state(true);
   let submitting = $state(false);
   let validating = $state(false);
+  let previewing = $state(false);
   let actionBookId = $state<string | null>(null);
 
   // Form fields
   let accessToken = $state("");
   let refreshToken = $state("");
   let bookUrl = $state("");
-  let branchMode = $state("default");
+  let selectedBranchId = $state("");
+  let preview = $state<PreviewBook | null>(null);
 
   // UI state
   let drawerOpen = $state(false);
@@ -54,6 +59,18 @@
     jobs.filter((j) => j.status === "running").length,
   );
   const failedJobs = $derived(jobs.filter((j) => j.status === "failed").length);
+  const syncStateByBook = $derived.by(() => {
+    const states = new Map<string, "running" | "queued">();
+    for (const job of jobs) {
+      if (!job.book_id) continue;
+      if (job.type !== "check_updates" && job.type !== "build_artifact") continue;
+      if (job.status !== "running" && job.status !== "queued") continue;
+      if (!states.has(job.book_id)) {
+        states.set(job.book_id, job.status === "running" ? "running" : "queued");
+      }
+    }
+    return states;
+  });
 
   const filteredBooks = $derived.by(() => {
     let result = books.slice();
@@ -62,7 +79,11 @@
       const q = searchQuery.toLowerCase();
       result = result.filter(
         (b) =>
-          b.title.toLowerCase().includes(q) || b.slug.toLowerCase().includes(q),
+          b.title.toLowerCase().includes(q) ||
+          b.slug.toLowerCase().includes(q) ||
+          (b.author ?? "").toLowerCase().includes(q) ||
+          b.genres.some((genre) => genre.name.toLowerCase().includes(q)) ||
+          b.tags.some((tag) => tag.name.toLowerCase().includes(q)),
       );
     }
 
@@ -96,6 +117,8 @@
     loading = true;
     try {
       credential = await getCredential();
+      accessToken = "";
+      refreshToken = "";
       const [trackedBooks, recentJobs] = await Promise.all([
         listTrackedBooks(),
         listJobs(),
@@ -161,17 +184,43 @@
     }
   }
 
+  function clearPreview() {
+    preview = null;
+    selectedBranchId = "";
+  }
+
+  async function inspectBookUrl() {
+    if (!bookUrl.trim()) return;
+    previewing = true;
+    try {
+      preview = await previewTrackedBook(bookUrl.trim());
+      selectedBranchId = "";
+    } catch (error) {
+      clearPreview();
+      toast.error(
+        error instanceof Error ? error.message : "failed to inspect title",
+      );
+    } finally {
+      previewing = false;
+    }
+  }
+
   async function submitBook() {
+    if (!preview) {
+      await inspectBookUrl();
+      if (!preview) return;
+    }
     submitting = true;
     try {
       await createTrackedBook({
         url: bookUrl.trim(),
-        branch_mode: branchMode,
-        selected_branch_id: null,
+        branch_mode: selectedBranchId ? "selected" : "default",
+        selected_branch_id: selectedBranchId || null,
       });
       bookUrl = "";
+      clearPreview();
       closeDrawer();
-      toast.success("tracked title added");
+      toast.success("title queued for sync and epub build");
       await loadDashboard();
     } catch (error) {
       toast.error(
@@ -182,20 +231,30 @@
     }
   }
 
-  async function runBookAction(bookId: string, action: "check" | "build") {
+  async function runBookAction(bookId: string) {
     actionBookId = bookId;
     try {
-      if (action === "check") {
-        await triggerCheck(bookId);
-        toast.success("queued update check");
-      } else {
-        await triggerBuild(bookId);
-        toast.success("queued epub rebuild");
-      }
+      await triggerCheck(bookId);
+      toast.success("queued sync and rebuild");
       await loadDashboard();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : `failed to ${action} title`,
+        error instanceof Error ? error.message : "failed to sync title",
+      );
+    } finally {
+      actionBookId = null;
+    }
+  }
+
+  async function changeBookBranch(bookId: string, branchId: string | null) {
+    actionBookId = bookId;
+    try {
+      await updateTrackedBookBranch(bookId, branchId);
+      toast.success("queued branch sync");
+      await loadDashboard();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "failed to update branch",
       );
     } finally {
       actionBookId = null;
@@ -255,6 +314,24 @@
       drawerClosing = false;
       drawerCloseTimer = null;
     }, 300);
+  }
+
+  function coverUrl(book: Pick<BookCard, "book_id" | "cover_url">): string | null {
+    return book.cover_url ? `/opds/books/${book.book_id}/cover` : null;
+  }
+
+  function branchSelectValue(book: Pick<BookCard, "selected_branch_id">): string {
+    return book.selected_branch_id ?? "";
+  }
+
+  function branchOptionLabel(branch: BranchSummary): string {
+    return branch.display;
+  }
+
+  function bookSyncLabel(bookId: string): string | null {
+    const state = syncStateByBook.get(bookId);
+    if (!state) return null;
+    return state === "running" ? "syncing" : "queued";
   }
 
   onMount(loadDashboard);
@@ -355,8 +432,12 @@
           filterOpen = !filterOpen;
         }}
         title="Filters"
-        aria-label="Toggle filters">��</button
+        aria-label="Toggle filters"
       >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h16l-6.25 7.2v4.95l-3.5 1.9v-6.85z"></path>
+        </svg>
+      </button>
     </div>
 
     <!-- Filter bar -->
@@ -421,59 +502,94 @@
       <div class="book-list">
         {#each filteredBooks as book (book.book_id)}
           <article class="book-item">
-            <!-- Top row: title + branch badge -->
-            <div class="book-item-top">
-              <div class="book-title-area">
-                <div class="book-slug">{book.slug}</div>
-                <div class="book-name">{book.title}</div>
-              </div>
-              <span class="book-badge">{book.branch_mode}</span>
-            </div>
-
-            <!-- Chips row -->
-            <div class="book-meta-row">
-              <span class="book-chip">{book.known_remote_chapters} ch</span>
-              {#if book.last_remote_chapter_key}
-                <span class="book-chip">{book.last_remote_chapter_key}</span>
-              {/if}
-              {#if book.latestArtifact}
-                <span class="book-chip"
-                  >{formatBytes(book.latestArtifact.file_size_bytes)}</span
-                >
+            <div class="book-cover-shell">
+              {#if coverUrl(book)}
+                <img
+                  class="book-cover"
+                  src={coverUrl(book) ?? undefined}
+                  alt={`Cover for ${book.title}`}
+                  loading="lazy"
+                />
               {:else}
-                <span class="book-chip" style="color:var(--text-ghost);"
-                  >no epub</span
-                >
+                <div class="book-cover book-cover--empty">
+                  <span>{book.title.slice(0, 1)}</span>
+                </div>
               {/if}
-              <span class="book-dot">·</span>
-              <span style="font-size:10px;color:var(--text-ghost);"
-                >checked {formatDate(book.last_checked_at)}</span
-              >
             </div>
 
-            <!-- Actions -->
-            <div class="book-actions">
-              <button
-                type="button"
-                class="btn btn-outline"
-                disabled={actionBookId === book.book_id}
-                onclick={() => runBookAction(book.book_id, "check")}
-                >check</button
-              >
-              <button
-                type="button"
-                class="btn btn-solid"
-                disabled={actionBookId === book.book_id}
-                onclick={() => runBookAction(book.book_id, "build")}
-                >build epub</button
-              >
-              {#if artifactUrl(book)}
-                <a
-                  href={artifactUrl(book)}
-                  class="btn btn-ghost"
-                  aria-disabled={false}>↓ epub</a
-                >
+            <div class="book-main">
+              <div class="book-item-top">
+                <div class="book-title-area">
+                  <div class="book-name">{book.title}</div>
+                  <div class="book-author">{book.author ?? "unknown author"}</div>
+                  <div class="book-slug">{book.slug}</div>
+                </div>
+                <div class="book-branch-shell">
+                  <select
+                    class="book-branch-select"
+                    value={branchSelectValue(book)}
+                    disabled={actionBookId === book.book_id || book.branches.length === 0}
+                    onchange={(event) =>
+                      void changeBookBranch(
+                        book.book_id,
+                        (event.currentTarget as HTMLSelectElement).value || null,
+                      )}
+                  >
+                    <option value="">default branch</option>
+                    {#each book.branches as branch (branch.id)}
+                      <option value={branch.id}>{branchOptionLabel(branch)}</option>
+                    {/each}
+                  </select>
+                </div>
+              </div>
+
+              <div class="book-meta-row">
+                <span class="book-chip">{book.known_remote_chapters} ch</span>
+                {#if book.last_remote_chapter_key}
+                  <span class="book-chip">{book.last_remote_chapter_key}</span>
+                {/if}
+                {#if book.latestArtifact}
+                  <span class="book-chip"
+                    >{formatBytes(book.latestArtifact.file_size_bytes)}</span
+                  >
+                {:else if bookSyncLabel(book.book_id)}
+                  <span class="book-chip book-chip--live">{bookSyncLabel(book.book_id)}</span>
+                {:else}
+                  <span class="book-chip" style="color:var(--text-ghost);"
+                    >no epub</span
+                  >
+                {/if}
+                <span class="book-dot">·</span>
+                <span class="book-timestamp">checked {formatDate(book.last_checked_at)}</span>
+              </div>
+
+              {#if book.genres.length > 0 || book.tags.length > 0}
+                <div class="book-tag-row">
+                  {#each book.genres.slice(0, 2) as genre (genre.slug)}
+                    <span class="book-tag">#{genre.name}</span>
+                  {/each}
+                  {#each book.tags.slice(0, 1) as tag (tag.slug)}
+                    <span class="book-tag book-tag--soft">@{tag.name}</span>
+                  {/each}
+                </div>
               {/if}
+
+              <div class="book-actions">
+                <button
+                  type="button"
+                  class="btn btn-outline"
+                  disabled={actionBookId === book.book_id}
+                  onclick={() => runBookAction(book.book_id)}
+                  >check</button
+                >
+                {#if artifactUrl(book)}
+                  <a
+                    href={artifactUrl(book)}
+                    class="btn btn-ghost"
+                    aria-disabled={false}>↓ epub</a
+                  >
+                {/if}
+              </div>
             </div>
           </article>
         {/each}
@@ -521,29 +637,75 @@
                     type="url"
                     placeholder="https://ranobelib.me/ru/book/..."
                     bind:value={bookUrl}
+                    oninput={() => clearPreview()}
                   />
                 </div>
 
-                <div class="form-field">
-                  <label for="branch-mode" class="form-label">branch strategy</label>
-                  <select
-                    id="branch-mode"
-                    class="form-select form-input"
-                    bind:value={branchMode}
-                  >
-                    <option value="default">default branch</option>
-                    <option value="selected">selected branch later</option>
-                  </select>
-                </div>
+                <button
+                  type="button"
+                  class="btn btn-outline"
+                  style="width:100%;height:40px;"
+                  disabled={previewing || !bookUrl.trim()}
+                  onclick={() => void inspectBookUrl()}
+                >
+                  {previewing ? "loading title..." : "inspect title"}
+                </button>
+
+                {#if preview}
+                  <div class="preview-card">
+                    <div class="preview-cover-shell">
+                      {#if preview.cover_url}
+                        <img
+                          class="preview-cover"
+                          src={preview.cover_url}
+                          alt={`Cover for ${preview.title}`}
+                        />
+                      {:else}
+                        <div class="preview-cover preview-cover--empty">
+                          <span>{preview.title.slice(0, 1)}</span>
+                        </div>
+                      {/if}
+                    </div>
+                    <div class="preview-copy">
+                      <div class="preview-title">{preview.title}</div>
+                      <div class="preview-author">{preview.author ?? "unknown author"}</div>
+                      <div class="preview-meta">{preview.available_chapters} chapters ready</div>
+                      {#if preview.genres.length > 0 || preview.tags.length > 0}
+                        <div class="preview-tag-row">
+                          {#each preview.genres.slice(0, 2) as genre (genre.slug)}
+                            <span class="book-tag">#{genre.name}</span>
+                          {/each}
+                          {#each preview.tags.slice(0, 2) as tag (tag.slug)}
+                            <span class="book-tag book-tag--soft">@{tag.name}</span>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="branch-select" class="form-label">branch</label>
+                    <select
+                      id="branch-select"
+                      class="form-select form-input"
+                      bind:value={selectedBranchId}
+                    >
+                      <option value="">default branch</option>
+                      {#each preview.branches as branch (branch.id)}
+                        <option value={branch.id}>{branchOptionLabel(branch)}</option>
+                      {/each}
+                    </select>
+                  </div>
+                {/if}
 
                 <button
                   type="button"
                   class="btn btn-solid"
                   style="width:100%;height:44px;"
-                  disabled={submitting || !bookUrl.trim()}
+                  disabled={submitting || !bookUrl.trim() || !preview}
                   onclick={() => void submitBook()}
                 >
-                  {submitting ? "tracking..." : "track title"}
+                  {submitting ? "queueing..." : "track and build"}
                 </button>
               </div>
 

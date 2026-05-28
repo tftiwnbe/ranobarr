@@ -1,3 +1,16 @@
+export type NamedTagSummary = {
+  name: string;
+  slug: string;
+};
+
+export type BranchSummary = {
+  id: string;
+  name: string;
+  chapter_count: number;
+  team_names: string[];
+  display: string;
+};
+
 export type CredentialView = {
   provider: string;
   has_access_token: boolean;
@@ -20,14 +33,31 @@ export type TrackedBook = {
   book_id: string;
   slug: string;
   title: string;
+  author: string | null;
+  cover_url: string | null;
   available_chapters: number;
   known_remote_chapters: number;
+  genres: NamedTagSummary[];
+  tags: NamedTagSummary[];
   branch_mode: string;
   selected_branch_id: string | null;
   selected_branch_label: string | null;
+  branches: BranchSummary[];
   enabled: boolean;
   last_checked_at: string | null;
   last_remote_chapter_key: string | null;
+};
+
+export type PreviewBook = {
+  slug: string;
+  title: string;
+  author: string | null;
+  summary: string | null;
+  cover_url: string | null;
+  available_chapters: number;
+  branches: BranchSummary[];
+  genres: NamedTagSummary[];
+  tags: NamedTagSummary[];
 };
 
 export type JobSummary = {
@@ -103,10 +133,24 @@ export async function listTrackedBooks(): Promise<TrackedBook[]> {
   return apiFetch<TrackedBook[]>("/api/v1/tracking/books");
 }
 
+export async function previewTrackedBook(url: string): Promise<PreviewBook> {
+  return apiFetch<PreviewBook>("/api/v1/tracking/preview", {
+    method: "POST",
+    body: JSON.stringify({ url })
+  });
+}
+
 export async function createTrackedBook(payload: TrackBookPayload): Promise<void> {
   await apiFetch("/api/v1/tracking/books", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export async function updateTrackedBookBranch(bookId: string, selectedBranchId: string | null): Promise<void> {
+  await apiFetch(`/api/v1/tracking/books/${bookId}/branch`, {
+    method: "PATCH",
+    body: JSON.stringify({ selected_branch_id: selectedBranchId })
   });
 }
 
