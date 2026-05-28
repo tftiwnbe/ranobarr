@@ -176,14 +176,6 @@
   </div>
 
   <main class="page-wrap">
-    <section class="stack" style="margin-bottom:1rem;">
-      <div class="eyebrow">ranobelib control plane</div>
-      <h1 class="display">ranobarr</h1>
-      <p class="lede">
-        same product family as mangarr. simpler surface, same void palette, same compact system controls.
-      </p>
-    </section>
-
     <section class="metrics-grid" style="margin-bottom:1rem;">
       <article class="metric-card">
         <span class="metric-value">{books.length}</span>
@@ -212,55 +204,7 @@
     {/if}
 
     <section class="dashboard-grid">
-      <div class="left-column">
-        <Panel eyebrow="source auth" title="ranobelib session" actionLabel={validating ? "checking..." : "validate"} actionDisabled={validating} onAction={runValidation}>
-          <div class="stack">
-            <div class="status-grid">
-              <div class="status-card">
-                <div class="status-label">access token</div>
-                <div class:active={credential?.has_access_token} class="status-value">{credential?.has_access_token ? "stored" : "missing"}</div>
-              </div>
-              <div class="status-card">
-                <div class="status-label">refresh token</div>
-                <div class:active={credential?.has_refresh_token} class="status-value">{credential?.has_refresh_token ? "stored" : "missing"}</div>
-              </div>
-              <div class="status-card">
-                <div class="status-label">remote check</div>
-                <div class:active={validation?.valid} class="status-value">{validation?.valid ? "valid" : validation ? "failed" : "idle"}</div>
-              </div>
-            </div>
-
-            {#if validation}
-              <div class="status-card">
-                <div class="status-label">validation</div>
-                <div class="meta-value">{validation.username ?? validation.email ?? validation.error}</div>
-              </div>
-            {/if}
-
-            <form class="split-form" on:submit|preventDefault={saveCredential}>
-              <InputField label="access token" bind:value={accessToken} multiline={true} placeholder="paste bearer token" />
-              <InputField label="refresh token" bind:value={refreshToken} multiline={true} placeholder="paste refresh token" />
-              <Button type="submit" loading={submitting}>save tokens</Button>
-            </form>
-          </div>
-        </Panel>
-
-        <Panel eyebrow="tracking" title="add a title">
-          <form class="split-form" on:submit|preventDefault={submitBook}>
-            <InputField label="ranobelib url" bind:value={bookUrl} placeholder="https://ranobelib.me/ru/book/..." />
-            <label class="stack" style="gap:0.35rem;">
-              <span class="eyebrow">branch strategy</span>
-              <select bind:value={branchMode} style="width:100%;height:48px;padding:0 1rem;border:1px solid var(--line);background:var(--void-2);color:var(--text);">
-                <option value="default">default branch</option>
-                <option value="selected">selected branch later</option>
-              </select>
-            </label>
-            <Button type="submit" loading={submitting}>track title</Button>
-          </form>
-        </Panel>
-      </div>
-
-      <div class="right-column">
+      <div class="main-column">
         <Panel eyebrow="library" title="tracked titles" actionLabel={loading ? "refreshing..." : "refresh"} actionDisabled={loading} onAction={loadDashboard}>
           {#if loading}
             <div class="empty-state">loading dashboard...</div>
@@ -315,6 +259,54 @@
               {/each}
             </div>
           {/if}
+        </Panel>
+      </div>
+
+      <div class="side-column">
+        <Panel eyebrow="tracking" title="add a title">
+          <form class="split-form" on:submit|preventDefault={submitBook}>
+            <InputField label="ranobelib url" bind:value={bookUrl} placeholder="https://ranobelib.me/ru/book/..." />
+            <label class="stack" style="gap:0.35rem;">
+              <span class="eyebrow">branch strategy</span>
+              <select bind:value={branchMode} style="width:100%;height:48px;padding:0 1rem;border:1px solid var(--line);background:var(--void-2);color:var(--text);">
+                <option value="default">default branch</option>
+                <option value="selected">selected branch later</option>
+              </select>
+            </label>
+            <Button type="submit" loading={submitting}>track title</Button>
+          </form>
+        </Panel>
+
+        <Panel eyebrow="source auth" title="ranobelib session" actionLabel={validating ? "checking..." : "validate"} actionDisabled={validating} onAction={runValidation}>
+          <div class="stack">
+            <div class="status-grid">
+              <div class="status-card">
+                <div class="status-label">access token</div>
+                <div class:active={credential?.has_access_token} class="status-value">{credential?.has_access_token ? "stored" : "missing"}</div>
+              </div>
+              <div class="status-card">
+                <div class="status-label">refresh token</div>
+                <div class:active={credential?.has_refresh_token} class="status-value">{credential?.has_refresh_token ? "stored" : "missing"}</div>
+              </div>
+              <div class="status-card">
+                <div class="status-label">remote check</div>
+                <div class:active={validation?.valid} class="status-value">{validation?.valid ? "valid" : validation ? "failed" : "idle"}</div>
+              </div>
+            </div>
+
+            {#if validation}
+              <div class="status-card">
+                <div class="status-label">validation</div>
+                <div class="meta-value">{validation.username ?? validation.email ?? validation.error}</div>
+              </div>
+            {/if}
+
+            <form class="split-form" on:submit|preventDefault={saveCredential}>
+              <InputField label="access token" bind:value={accessToken} multiline={true} placeholder="paste bearer token" />
+              <InputField label="refresh token" bind:value={refreshToken} multiline={true} placeholder="paste refresh token" />
+              <Button type="submit" loading={submitting}>save tokens</Button>
+            </form>
+          </div>
         </Panel>
 
         <Panel eyebrow="jobs" title="recent activity">

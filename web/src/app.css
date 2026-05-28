@@ -148,13 +148,13 @@ a {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.7fr) 340px;
   gap: 1rem;
   align-items: start;
 }
 
-.left-column,
-.right-column {
+.main-column,
+.side-column {
   display: grid;
   gap: 1rem;
 }
@@ -176,6 +176,7 @@ a {
 
 .metric-card {
   padding: 1rem;
+  min-height: 88px;
 }
 
 .metric-value {
@@ -252,6 +253,15 @@ a {
 .job-list {
   display: grid;
   gap: 0.75rem;
+}
+
+.side-column .card {
+  position: sticky;
+  top: 1rem;
+}
+
+.side-column .card + .card {
+  position: static;
 }
 
 .book-card {
@@ -381,6 +391,10 @@ a {
 @media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .side-column .card {
+    position: static;
   }
 
   .metrics-grid,
