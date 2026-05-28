@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -81,6 +82,45 @@ def branch_name_of(branch: Any) -> str | None:
         return str(team["name"])
 
     return None
+
+
+def normalize_summary_value(raw_summary: Any) -> str | None:
+    if raw_summary is None:
+        return None
+    if isinstance(raw_summary, str):
+        normalized = re.sub(r"\s+", " ", raw_summary).strip()
+        return normalized or None
+    if isinstance(raw_summary, list):
+        normalized = re.sub(r"\s+", " ", " ".join(extract_summary_text(item) for item in raw_summary)).strip()
+        return normalized or None
+    if isinstance(raw_summary, dict):
+        content = raw_summary.get("content")
+        if isinstance(content, list):
+          normalized = re.sub(r"\s+", " ", " ".join(extract_summary_text(item) for item in content)).strip()
+          return normalized or None
+    normalized = re.sub(r"\s+", " ", str(raw_summary)).strip()
+    return normalized or None
+
+
+def extract_summary_text(node: Any) -> str:
+    if isinstance(node, str):
+        return node
+    if not isinstance(node, dict):
+        return ""
+
+    node_type = node.get("type")
+    if node_type == "text":
+        return str(node.get("text") or "")
+    if node_type == "hardBreak":
+        return "\n"
+
+    content = node.get("content")
+    if isinstance(content, list):
+        parts = [extract_summary_text(item) for item in content]
+        delimiter = "\n" if node_type in {"paragraph", "heading", "blockquote", "listItem"} else " "
+        return delimiter.join(part for part in parts if part)
+
+    return ""
 
 
 def select_chapters_for_rule(
@@ -192,7 +232,7 @@ async def resolve_remote_book(client: RanobeLibClient, request: TrackBookRequest
         slug=slug,
         title=title,
         author=author,
-        summary=novel_info.get("summary"),
+        summary=normalize_summary_value(novel_info.get("summary")),
         cover_url=cover_url,
         available_chapters=len(chapters_data),
         branches=branch_list,

@@ -1,7 +1,12 @@
 from sqlmodel import select
 
 from app.models import Artifact, Book, JobEvent, JobRecord
-from app.tracking.service import branch_id_of, chapter_key, select_chapters_for_rule
+from app.tracking.service import (
+    branch_id_of,
+    chapter_key,
+    normalize_summary_value,
+    select_chapters_for_rule,
+)
 
 
 def test_chapter_key() -> None:
@@ -34,6 +39,29 @@ def test_select_chapters_for_rule_default_branch() -> None:
 def test_branch_id_of() -> None:
     assert branch_id_of({"branch_id": 9}) == "9"
     assert branch_id_of(None) is None
+
+
+def test_normalize_summary_value_from_doc_payload() -> None:
+    summary = {
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [
+                    {"type": "text", "text": "First line"},
+                    {"type": "hardBreak"},
+                    {"type": "text", "text": "second line"},
+                ],
+            },
+            {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": "Next block"}],
+            },
+        ],
+    }
+
+    normalized = normalize_summary_value(summary)
+    assert normalized == "First line second line Next block"
 
 
 async def test_healthcheck(client) -> None:
