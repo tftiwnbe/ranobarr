@@ -1,10 +1,14 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import Select from "./lib/components/Select.svelte";
+  import type { SelectOption } from "./lib/components/Select.types";
+  import StarField from "./lib/components/StarField.svelte";
   import ToastContainer from "./lib/components/ToastContainer.svelte";
   import { toast } from "./lib/components/toast-store.svelte";
   import {
     type BranchSummary,
     createTrackedBook,
+    deleteTrackedBook,
     getCredential,
     latestArtifact,
     listJobs,
@@ -80,10 +84,7 @@
       result = result.filter(
         (b) =>
           b.title.toLowerCase().includes(q) ||
-          b.slug.toLowerCase().includes(q) ||
-          (b.author ?? "").toLowerCase().includes(q) ||
-          b.genres.some((genre) => genre.name.toLowerCase().includes(q)) ||
-          b.tags.some((tag) => tag.name.toLowerCase().includes(q)),
+          (b.author ?? "").toLowerCase().includes(q),
       );
     }
 
@@ -261,6 +262,24 @@
     }
   }
 
+  async function removeBook(book: BookCard) {
+    const confirmed = window.confirm(`Delete "${book.title}" and its stored files?`);
+    if (!confirmed) return;
+
+    actionBookId = book.book_id;
+    try {
+      await deleteTrackedBook(book.book_id);
+      toast.success("title removed");
+      await loadDashboard();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "failed to delete title",
+      );
+    } finally {
+      actionBookId = null;
+    }
+  }
+
   // ─── Helpers ─────────────────────────���────────────────
   function artifactUrl(book: BookCard): string | null {
     return book.latestArtifact
@@ -328,6 +347,16 @@
     return branch.display;
   }
 
+  function branchOptions(branches: BranchSummary[]): SelectOption[] {
+    return [
+      { value: "", label: "default branch" },
+      ...branches.map((branch) => ({
+        value: branch.id,
+        label: branchOptionLabel(branch),
+      })),
+    ];
+  }
+
   function bookSyncLabel(bookId: string): string | null {
     const state = syncStateByBook.get(bookId);
     if (!state) return null;
@@ -355,6 +384,7 @@
 </svelte:head>
 
 <div class="page-shell">
+  <StarField count={54} />
   <div class="grid-overlay"></div>
 
   <!-- ─── Header ─────────────────────────────── -->
@@ -521,25 +551,17 @@
               <div class="book-item-top">
                 <div class="book-title-area">
                   <div class="book-name">{book.title}</div>
-                  <div class="book-author">{book.author ?? "unknown author"}</div>
-                  <div class="book-slug">{book.slug}</div>
+                  <div class="book-author">{book.author ?? "unknown creator"}</div>
                 </div>
                 <div class="book-branch-shell">
-                  <select
+                  <Select
                     class="book-branch-select"
                     value={branchSelectValue(book)}
+                    options={branchOptions(book.branches)}
+                    placeholder="default branch"
                     disabled={actionBookId === book.book_id || book.branches.length === 0}
-                    onchange={(event) =>
-                      void changeBookBranch(
-                        book.book_id,
-                        (event.currentTarget as HTMLSelectElement).value || null,
-                      )}
-                  >
-                    <option value="">default branch</option>
-                    {#each book.branches as branch (branch.id)}
-                      <option value={branch.id}>{branchOptionLabel(branch)}</option>
-                    {/each}
-                  </select>
+                    onValueChange={(value) => void changeBookBranch(book.book_id, value || null)}
+                  />
                 </div>
               </div>
 
@@ -563,17 +585,6 @@
                 <span class="book-timestamp">checked {formatDate(book.last_checked_at)}</span>
               </div>
 
-              {#if book.genres.length > 0 || book.tags.length > 0}
-                <div class="book-tag-row">
-                  {#each book.genres.slice(0, 2) as genre (genre.slug)}
-                    <span class="book-tag">#{genre.name}</span>
-                  {/each}
-                  {#each book.tags.slice(0, 1) as tag (tag.slug)}
-                    <span class="book-tag book-tag--soft">@{tag.name}</span>
-                  {/each}
-                </div>
-              {/if}
-
               <div class="book-actions">
                 <button
                   type="button"
@@ -589,6 +600,13 @@
                     aria-disabled={false}>↓ epub</a
                   >
                 {/if}
+                <button
+                  type="button"
+                  class="btn btn-danger"
+                  disabled={actionBookId === book.book_id}
+                  onclick={() => void removeBook(book)}
+                  >delete</button
+                >
               </div>
             </div>
           </article>
@@ -668,33 +686,20 @@
                     </div>
                     <div class="preview-copy">
                       <div class="preview-title">{preview.title}</div>
-                      <div class="preview-author">{preview.author ?? "unknown author"}</div>
+                      <div class="preview-author">{preview.author ?? "unknown creator"}</div>
                       <div class="preview-meta">{preview.available_chapters} chapters ready</div>
-                      {#if preview.genres.length > 0 || preview.tags.length > 0}
-                        <div class="preview-tag-row">
-                          {#each preview.genres.slice(0, 2) as genre (genre.slug)}
-                            <span class="book-tag">#{genre.name}</span>
-                          {/each}
-                          {#each preview.tags.slice(0, 2) as tag (tag.slug)}
-                            <span class="book-tag book-tag--soft">@{tag.name}</span>
-                          {/each}
-                        </div>
-                      {/if}
                     </div>
                   </div>
 
                   <div class="form-field">
                     <label for="branch-select" class="form-label">branch</label>
-                    <select
+                    <Select
                       id="branch-select"
-                      class="form-select form-input"
+                      class="form-select"
                       bind:value={selectedBranchId}
-                    >
-                      <option value="">default branch</option>
-                      {#each preview.branches as branch (branch.id)}
-                        <option value={branch.id}>{branchOptionLabel(branch)}</option>
-                      {/each}
-                    </select>
+                      options={branchOptions(preview.branches)}
+                      placeholder="default branch"
+                    />
                   </div>
                 {/if}
 

@@ -34,7 +34,7 @@
   const stars = $derived.by(() => generateStars(count));
 </script>
 
-<div style="position:fixed;inset:0;overflow:hidden;pointer-events:none;">
+<div class="starfield-layer" style="position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0;">
   {#each stars as star, i (i)}
     <div
       style={`position:absolute;left:${star.x}%;top:${star.y}%;width:${star.size}px;height:${star.size}px;border-radius:999px;background:${star.bright ? "var(--text)" : "var(--text-soft)"};opacity:${star.opacity};box-shadow:0 0 ${star.bright ? 8 : 4}px ${star.bright ? "rgba(255,255,255,0.5)" : "rgba(200,200,210,0.15)"};animation:${star.bright ? "twinkle" : "twinkle-slow"} ${star.duration}s ease-in-out infinite;animation-delay:${star.delay}s;`}

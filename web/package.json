@@ -8,6 +8,10 @@
     "build": "vite build",
     "preview": "vite preview"
   },
+  "dependencies": {
+    "bits-ui": "^2.15.5",
+    "phosphor-svelte": "^3.1.0"
+  },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.4",
     "svelte": "^5.38.6",

@@ -154,16 +154,15 @@ export async function updateTrackedBookBranch(bookId: string, selectedBranchId: 
   });
 }
 
-export async function triggerCheck(bookId: string): Promise<void> {
-  await apiFetch(`/api/v1/tracking/books/${bookId}/check`, {
-    method: "POST"
+export async function deleteTrackedBook(bookId: string): Promise<void> {
+  await apiFetch(`/api/v1/tracking/books/${bookId}`, {
+    method: "DELETE"
   });
 }
 
-export async function triggerBuild(bookId: string): Promise<void> {
-  await apiFetch(`/api/v1/tracking/books/${bookId}/build`, {
-    method: "POST",
-    body: JSON.stringify({ formats: ["manifest", "epub"] })
+export async function triggerCheck(bookId: string): Promise<void> {
+  await apiFetch(`/api/v1/tracking/books/${bookId}/check`, {
+    method: "POST"
   });
 }
 

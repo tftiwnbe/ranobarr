@@ -103,7 +103,8 @@ h4 {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.03;
+  z-index: 0;
+  opacity: 0.04;
   background-image:
     linear-gradient(rgba(200, 200, 220, 0.6) 1px, transparent 1px),
     linear-gradient(90deg, rgba(200, 200, 220, 0.6) 1px, transparent 1px);
@@ -442,17 +443,6 @@ h4 {
   min-width: 0;
 }
 
-.book-slug {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-ghost);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 0.18rem;
-}
-
 .book-name {
   font-size: 15px;
   font-weight: 600;
@@ -476,30 +466,7 @@ h4 {
 
 .book-branch-shell {
   flex-shrink: 0;
-  width: 10.5rem;
-}
-
-.book-branch-select {
-  width: 100%;
-  height: 28px;
-  padding: 0 2rem 0 0.65rem;
-  border: 1px solid var(--line);
-  background: var(--void-3);
-  color: var(--text-muted);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  appearance: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' stroke='%2371717a' stroke-width='1.25' fill='none'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.7rem center;
-}
-
-.book-branch-select:focus {
-  border-color: var(--void-6);
-  outline: none;
+  width: 12.5rem;
 }
 
 .book-meta-row {
@@ -568,29 +535,6 @@ h4 {
   flex-wrap: wrap;
 }
 
-.book-tag-row {
-  display: flex;
-  gap: 0.45rem;
-  flex-wrap: wrap;
-}
-
-.book-tag {
-  display: inline-flex;
-  align-items: center;
-  height: 19px;
-  padding: 0 0.45rem;
-  border: 1px solid rgba(113, 113, 122, 0.15);
-  background: rgba(16, 16, 20, 0.72);
-  color: var(--text-ghost);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.book-tag--soft {
-  color: var(--text-muted);
-}
-
 /* ─── Buttons ──────────────────────────────── */
 .btn {
   display: inline-flex;
@@ -639,6 +583,17 @@ h4 {
 }
 .btn-ghost:hover {
   color: var(--text-soft);
+}
+
+.btn-danger {
+  border-color: rgba(248, 113, 113, 0.16);
+  background: transparent;
+  color: rgba(248, 113, 113, 0.8);
+}
+
+.btn-danger:hover {
+  border-color: rgba(248, 113, 113, 0.28);
+  color: var(--error);
 }
 
 /* ─── Empty / loading ──────────────────────────────── */
@@ -828,13 +783,6 @@ h4 {
   text-transform: uppercase;
 }
 
-.preview-tag-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.6rem;
-}
-
 /* ─── Form elements ──────────────────────────────── */
 .form-field {
   display: grid;
@@ -883,17 +831,114 @@ h4 {
   outline: none;
 }
 
-.form-select {
+/* ─── Mangarr select port ──────────────────────────────── */
+.branch-select {
+  position: relative;
+  display: flex;
   width: 100%;
-  height: 42px;
-  padding: 0 0.8rem;
-  border: 1px solid var(--line);
-  background: var(--void-2);
+  min-width: 0;
+  align-items: center;
+  border: 1px solid var(--void-4);
+  background: rgba(16, 16, 20, 0.9);
+  padding: 0 2rem 0 0.8rem;
   color: var(--text);
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2371717a' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.8rem center;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.book-branch-select {
+  height: 36px;
+}
+
+.form-select {
+  height: 42px;
+}
+
+.branch-select:hover {
+  border-color: var(--void-5);
+}
+
+.branch-select:focus-visible,
+.branch-select[data-state="open"] {
+  border-color: var(--void-6);
+  outline: none;
+}
+
+.branch-select[data-disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.branch-select-label,
+.branch-select-placeholder {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.branch-select-label {
+  color: var(--text-soft);
+}
+
+.branch-select-placeholder {
+  color: var(--text-ghost);
+}
+
+.branch-select-caret {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  right: 0.8rem;
+  display: inline-flex;
+  transform: translateY(-50%);
+  color: var(--text-ghost);
+}
+
+.branch-select-menu {
+  z-index: 140;
+  width: var(--bits-select-anchor-width);
+  border: 1px solid var(--line);
+  background: rgba(10, 10, 14, 0.98);
+  box-shadow:
+    0 0 0 1px rgba(58, 58, 72, 0.3),
+    0 18px 60px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.branch-select-viewport {
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.branch-select-item {
+  display: flex;
+  height: 36px;
+  cursor: pointer;
+  align-items: center;
+  padding: 0 0.8rem;
+  color: var(--text-soft);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  outline: none;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.branch-select-item[data-highlighted],
+.branch-select-item[data-selected] {
+  background: var(--void-3);
+  color: var(--text);
 }
 
 /* ─── Status indicators ──────────────────────────── */
@@ -1107,6 +1152,28 @@ h4 {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes twinkle-slow {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.42;
   }
 }
 
