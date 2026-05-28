@@ -9,6 +9,10 @@ class TrackBookRequest(BaseModel):
     selected_branch_id: str | None = None
 
 
+class PreviewBookRequest(BaseModel):
+    url: str
+
+
 class BuildRequest(BaseModel):
     formats: list[str] = Field(default_factory=lambda: ["manifest", "epub"])
 
@@ -16,6 +20,10 @@ class BuildRequest(BaseModel):
 class JobEnqueueResponse(BaseModel):
     job_id: str
     status: str
+
+
+class BranchUpdateRequest(BaseModel):
+    selected_branch_id: str | None = None
 
 
 class BranchSummary(BaseModel):
@@ -26,6 +34,23 @@ class BranchSummary(BaseModel):
     display: str
 
 
+class NamedTagSummary(BaseModel):
+    name: str
+    slug: str
+
+
+class PreviewBookResponse(BaseModel):
+    slug: str
+    title: str
+    author: str | None
+    summary: str | None
+    cover_url: str | None
+    available_chapters: int
+    branches: list[BranchSummary]
+    genres: list[NamedTagSummary]
+    tags: list[NamedTagSummary]
+
+
 class TrackBookResponse(BaseModel):
     book_id: str
     slug: str
@@ -34,6 +59,8 @@ class TrackBookResponse(BaseModel):
     summary: str | None
     cover_url: str | None
     available_chapters: int
+    genres: list[NamedTagSummary]
+    tags: list[NamedTagSummary]
     branch_mode: str
     selected_branch_id: str | None
     selected_branch_label: str | None
@@ -45,11 +72,16 @@ class TrackedBookSummary(BaseModel):
     book_id: str
     slug: str
     title: str
+    author: str | None
+    cover_url: str | None
     available_chapters: int
     known_remote_chapters: int
+    genres: list[NamedTagSummary]
+    tags: list[NamedTagSummary]
     branch_mode: str
     selected_branch_id: str | None
     selected_branch_label: str | None
+    branches: list[BranchSummary]
     enabled: bool
     last_checked_at: datetime | None
     last_remote_chapter_key: str | None
@@ -67,7 +99,5 @@ class ChapterSnapshotSummary(BaseModel):
 
 class TrackedBookDetail(TrackedBookSummary):
     source_url: str
-    author: str | None
     summary: str | None
-    cover_url: str | None
     snapshots: list[ChapterSnapshotSummary]

@@ -7,6 +7,35 @@ from app.models import Artifact, Book, BookState, ChapterContentCache, ChapterSn
 
 
 class FakeRanobeLibClient:
+    async def get_novel_info(self, slug: str):
+        return {
+            "id": 1,
+            "rus_name": "Runtime Title",
+            "authors": [{"name": "Runtime Author"}],
+            "summary": "Runtime summary",
+            "cover": {"default": "https://example.com/runtime.jpg"},
+            "genres": [{"name": "Fantasy"}],
+            "tags": [{"name": "Academy"}],
+        }
+
+    async def get_novel_chapters(self, slug: str):
+        return [
+            {
+                "volume": "1",
+                "number": "1",
+                "name": "One",
+                "index": 1,
+                "branches": [{"branch_id": 7, "teams": [{"name": "Branch 7"}]}],
+            },
+            {
+                "volume": "1",
+                "number": "2",
+                "name": "Two",
+                "index": 2,
+                "branches": [{"branch_id": 7, "teams": [{"name": "Branch 7"}]}],
+            },
+        ]
+
     async def get_chapter_content(self, slug: str, volume: str, number: str, branch_id: str | None = None):
         return {
             "content": f"<p>{slug}:{volume}:{number}:{branch_id or 'none'}</p>",
@@ -163,3 +192,36 @@ async def test_build_artifact_retention_keeps_latest_two_per_format(db, temp_dat
     assert pruned_paths
     for path in pruned_paths:
         assert not (temp_data_dir / path).exists()
+
+
+async def test_check_updates_job_enqueues_build_when_artifact_is_stale(db, monkeypatch) -> None:
+    async def fake_make_ranobelib_client(session):
+        return FakeRanobeLibClient()
+
+    monkeypatch.setattr("app.core.jobs.make_ranobelib_client", fake_make_ranobelib_client)
+
+    book = Book(
+        slug="check-book",
+        source_url="https://ranobelib.me/ru/book/check-book",
+        title="Check Book",
+        available_chapters=2,
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    db.add(TrackRule(book_id=book.id, branch_mode="default"))
+    db.add(BookState(book_id=book.id, last_built_chapter_key="v1_ch1"))
+    job = JobRecord(type="check_updates", status="queued", book_id=book.id, payload_json=json.dumps({}))
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    runtime = JobRuntime()
+    await runtime._run_single_job(db, job)
+
+    follow_up_jobs = (
+        await db.exec(select(JobRecord).where(JobRecord.book_id == book.id, JobRecord.type == "build_artifact"))
+    ).all()
+    assert len(follow_up_jobs) == 1
+    assert follow_up_jobs[0].status == "queued"

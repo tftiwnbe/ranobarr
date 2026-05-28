@@ -2,17 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from typing import Iterable
 from xml.etree.ElementTree import Element, SubElement, tostring, register_namespace
 
 from fastapi import Request
 from sqlalchemy import func
-from sqlmodel import and_, or_, select
+from sqlmodel import or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.artifacts.service import latest_artifacts_for_books
 from app.core.titles import normalize_book_title
 from app.models import Artifact, Book, BookState
+from app.tracking.schemas import NamedTagSummary
+from app.tracking.service import deserialize_named_items
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
 OPDS_NS = "http://opds-spec.org/2010/catalog"
@@ -106,6 +109,16 @@ def build_root_feed(request: Request, *, downloadable_count: int, latest_updated
             "Recently Updated",
             f"{request.url_for('opds_books_feed')}?sort=updated",
             "Newest generated books first.",
+        ),
+        (
+            "Genres",
+            str(request.url_for("opds_genre_groups_feed")),
+            "Browse books grouped by genre.",
+        ),
+        (
+            "Tags",
+            str(request.url_for("opds_tag_groups_feed")),
+            "Browse books grouped by tag.",
         ),
     ]
 
@@ -202,6 +215,18 @@ def build_book_entry(request: Request, record: OpdsBookRecord) -> Element:
             entry,
             f"{{{ATOM_NS}}}category",
             {"term": record.book.status.lower(), "label": record.book.status},
+        )
+    for genre in deserialize_named_items(record.book.genres_json):
+        SubElement(
+            entry,
+            f"{{{ATOM_NS}}}category",
+            {"term": f"genre:{genre.slug}", "label": genre.name},
+        )
+    for tag in deserialize_named_items(record.book.tags_json):
+        SubElement(
+            entry,
+            f"{{{ATOM_NS}}}category",
+            {"term": f"tag:{tag.slug}", "label": tag.name},
         )
 
     acquisition_href = str(request.url_for("opds_acquire_epub", book_id=record.book.id))
@@ -331,9 +356,87 @@ async def get_downloadable_book_record(
     return OpdsBookRecord(book=book, state=state, artifact=latest)
 
 
-def _replace_query(href: str, **params: int) -> str:
-    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+async def list_grouped_metadata(
+    session: AsyncSession,
+    *,
+    field_name: str,
+) -> list[tuple[NamedTagSummary, int]]:
+    records, _ = await list_downloadable_books(
+        session,
+        page=1,
+        page_size=1000,
+        sort="title",
+    )
+    counts: dict[str, tuple[NamedTagSummary, set[str]]] = {}
+    for record in records:
+        for item in deserialize_named_items(getattr(record.book, field_name)):
+            current = counts.get(item.slug)
+            if current is None:
+                counts[item.slug] = (item, {record.book.id})
+            else:
+                current[1].add(record.book.id)
 
+    grouped = [(item, len(book_ids)) for item, book_ids in counts.values()]
+    grouped.sort(key=lambda row: (-row[1], row[0].name.lower()))
+    return grouped
+
+
+async def list_downloadable_books_by_group(
+    session: AsyncSession,
+    *,
+    field_name: str,
+    group_slug: str,
+    page: int,
+    page_size: int,
+) -> tuple[list[OpdsBookRecord], int, str | None]:
+    records, _ = await list_downloadable_books(
+        session,
+        page=1,
+        page_size=1000,
+        sort="title",
+    )
+    filtered: list[OpdsBookRecord] = []
+    group_name: str | None = None
+    for record in records:
+        for item in deserialize_named_items(getattr(record.book, field_name)):
+            if item.slug == group_slug:
+                group_name = item.name
+                filtered.append(record)
+                break
+
+    total_count = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    return filtered[start:end], total_count, group_name
+
+
+def build_group_feed(
+    request: Request,
+    *,
+    title: str,
+    route_name: str,
+    entries: list[tuple[NamedTagSummary, int]],
+    self_href: str,
+) -> bytes:
+    feed = _feed_root(title, self_href, utcnow())
+    _feed_link(feed, rel="self", href=self_href, type_value=_feed_type("navigation"))
+    _feed_link(feed, rel="start", href=str(request.url_for("opds_root")), type_value=_feed_type("navigation"))
+    for item, count in entries:
+        href = str(request.url_for(route_name, group_slug=item.slug))
+        entry = SubElement(feed, f"{{{ATOM_NS}}}entry")
+        SubElement(entry, f"{{{ATOM_NS}}}id").text = href
+        SubElement(entry, f"{{{ATOM_NS}}}title").text = item.name
+        SubElement(entry, f"{{{ATOM_NS}}}updated").text = _isoformat(utcnow())
+        SubElement(
+            entry,
+            f"{{{ATOM_NS}}}content",
+            {"type": "text"},
+        ).text = f"{count} downloadable title{'s' if count != 1 else ''}"
+        _entry_link(entry, rel="subsection", href=href, type_value=_feed_type("acquisition"))
+    return tostring(feed, encoding="utf-8", xml_declaration=True)
+
+
+def _replace_query(href: str, **params: int) -> str:
     split = urlsplit(href)
     current = dict(parse_qsl(split.query, keep_blank_values=True))
     current.update({key: str(value) for key, value in params.items()})

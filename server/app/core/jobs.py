@@ -56,6 +56,22 @@ async def enqueue_job(
     return EnqueueJobResult(job_id=record.id, status=record.status)
 
 
+async def has_active_job(
+    session: AsyncSession,
+    *,
+    job_type: str,
+    book_id: str | None,
+) -> bool:
+    result = await session.exec(
+        select(JobRecord).where(
+            JobRecord.type == job_type,
+            JobRecord.book_id == book_id,
+            JobRecord.status.in_(["queued", "running"]),
+        )
+    )
+    return result.first() is not None
+
+
 async def mark_job_started(session: AsyncSession, job: JobRecord) -> JobRecord:
     job.status = "running"
     job.started_at = utcnow()
@@ -125,7 +141,11 @@ class JobRuntime:
             await asyncio.sleep(self._tick_interval_seconds)
 
     async def pending_jobs(self, session: AsyncSession) -> list[JobRecord]:
-        result = await session.exec(select(JobRecord).where(JobRecord.status == "queued"))
+        result = await session.exec(
+            select(JobRecord)
+            .where(JobRecord.status == "queued")
+            .order_by(JobRecord.created_at.asc(), JobRecord.id.asc())
+        )
         return list(result)
 
     async def run_pending_jobs(self) -> None:
@@ -161,6 +181,24 @@ class JobRuntime:
                     job,
                     event_logger=lambda **kwargs: log_job_event(session, job_id=job.id, **kwargs),
                 )
+                if (
+                    job.book_id
+                    and result.get("build_needed")
+                    and not await has_active_job(
+                        session,
+                        job_type="build_artifact",
+                        book_id=job.book_id,
+                    )
+                ):
+                    await enqueue_job(
+                        session,
+                        job_type="build_artifact",
+                        book_id=job.book_id,
+                        payload={
+                            "slug": result.get("slug"),
+                            "formats": ["manifest", "epub"],
+                        },
+                    )
             elif job.type == "build_artifact":
                 if not job.book_id:
                     raise TrackingError("Build job is missing a book_id")

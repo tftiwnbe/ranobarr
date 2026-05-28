@@ -7,14 +7,23 @@ from app.core.jobs import enqueue_job
 from app.ranobelib import RanobeLibClient
 from app.source_auth.service import make_ranobelib_client
 from .schemas import (
+    BranchUpdateRequest,
     BuildRequest,
     JobEnqueueResponse,
+    PreviewBookRequest,
+    PreviewBookResponse,
     TrackBookRequest,
     TrackBookResponse,
     TrackedBookDetail,
     TrackedBookSummary,
 )
-from .service import get_tracked_book_detail, list_tracked_books, track_book
+from .service import (
+    get_tracked_book_detail,
+    list_tracked_books,
+    preview_remote_book,
+    track_book,
+    update_tracked_book_branch,
+)
 
 router = APIRouter(prefix="/api/v1/tracking", tags=["tracking"])
 
@@ -45,6 +54,17 @@ async def create_tracked_book(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+@router.post("/preview", response_model=PreviewBookResponse)
+async def preview_tracked_book(
+    request: PreviewBookRequest,
+    client: RanobeLibClient = Depends(get_authorized_ranobelib_client),
+) -> PreviewBookResponse:
+    try:
+        return await preview_remote_book(client, request)
+    except TrackingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @router.get("/books", response_model=list[TrackedBookSummary])
 async def get_tracked_books(
     session: AsyncSession = Depends(get_database_session),
@@ -61,6 +81,19 @@ async def get_tracked_book(
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked book not found")
     return detail
+
+
+@router.patch("/books/{book_id}/branch", response_model=JobEnqueueResponse, status_code=status.HTTP_202_ACCEPTED)
+async def update_tracked_book_branch_selection(
+    book_id: str,
+    request: BranchUpdateRequest,
+    session: AsyncSession = Depends(get_database_session),
+) -> JobEnqueueResponse:
+    try:
+        _, job = await update_tracked_book_branch(session, book_id=book_id, request=request)
+    except TrackingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return JobEnqueueResponse(job_id=job.job_id, status=job.status)
 
 
 @router.post("/books/{book_id}/check", status_code=status.HTTP_202_ACCEPTED)

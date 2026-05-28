@@ -325,3 +325,86 @@ async def test_build_endpoint_enqueues_requested_formats(client, db) -> None:
     )
     job = result.one()
     assert '"formats": ["manifest"]' in job.payload_json
+
+
+async def test_preview_endpoint_returns_branches_and_metadata(client, monkeypatch) -> None:
+    class FakeRanobeLibClient:
+        @staticmethod
+        def extract_slug_from_url(url: str) -> str | None:
+            return "preview-book"
+
+        async def get_novel_info(self, slug: str):
+            assert slug == "preview-book"
+            return {
+                "id": 1,
+                "rus_name": "Preview Book",
+                "authors": [{"name": "Preview Author"}],
+                "summary": "Preview summary",
+                "cover": {"default": "https://example.com/cover.jpg"},
+                "genres": [{"name": "Fantasy"}],
+                "tags": [{"name": "Academy"}],
+            }
+
+        async def get_novel_chapters(self, slug: str):
+            return [
+                {
+                    "volume": "1",
+                    "number": "1",
+                    "name": "Chapter 1",
+                    "index": 1,
+                    "branches": [{"branch_id": 5, "teams": [{"name": "Main Team"}]}],
+                }
+            ]
+
+        async def close(self) -> None:
+            return None
+
+    async def fake_make_ranobelib_client(_session):
+        return FakeRanobeLibClient()
+
+    monkeypatch.setattr("app.tracking.router.make_ranobelib_client", fake_make_ranobelib_client)
+
+    response = await client.post("/api/v1/tracking/preview", json={"url": "https://ranobelib.me/ru/book/preview-book"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["title"] == "Preview Book"
+    assert payload["author"] == "Preview Author"
+    assert payload["branches"][0]["id"] == "5"
+    assert payload["genres"][0]["name"] == "Fantasy"
+    assert payload["tags"][0]["name"] == "Academy"
+
+
+async def test_branch_update_endpoint_enqueues_refresh(client, db) -> None:
+    book = Book(
+        slug="branch-book",
+        source_url="https://ranobelib.me/ru/book/branch-book",
+        title="Branch Book",
+        branches_json='[{"id":"5","name":"Main","chapter_count":10,"team_names":["Main Team"],"display":"Main Team"}]',
+        available_chapters=10,
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    from app.models import TrackRule, BookState
+
+    db.add(TrackRule(book_id=book.id, branch_mode="default"))
+    db.add(BookState(book_id=book.id, last_remote_chapter_key="v1_ch10"))
+    await db.commit()
+
+    response = await client.patch(
+        f"/api/v1/tracking/books/{book.id}/branch",
+        json={"selected_branch_id": "5"},
+    )
+    assert response.status_code == 202
+
+    rule = (await db.exec(select(TrackRule).where(TrackRule.book_id == book.id))).one()
+    assert rule.branch_mode == "selected"
+    assert rule.selected_branch_id == "5"
+
+    queued_job = (
+        await db.exec(
+            select(JobRecord).where(JobRecord.book_id == book.id, JobRecord.type == "check_updates")
+        )
+    ).one()
+    assert '"selected_branch_id": "5"' in queued_job.payload_json

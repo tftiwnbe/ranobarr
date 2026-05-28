@@ -20,6 +20,9 @@ class Book(SQLModel, table=True):
     cover_url: str | None = None
     summary: str | None = None
     status: str | None = None
+    genres_json: str | None = None
+    tags_json: str | None = None
+    branches_json: str | None = None
     available_chapters: int = 0
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

@@ -12,10 +12,13 @@ from app.models import Book
 from .service import (
     build_book_detail_feed,
     build_books_feed,
+    build_group_feed,
     build_opensearch_description,
     build_root_feed,
     get_downloadable_book_record,
     list_downloadable_books,
+    list_downloadable_books_by_group,
+    list_grouped_metadata,
 )
 
 router = APIRouter(prefix="/opds", tags=["opds"])
@@ -71,6 +74,98 @@ async def opds_books_feed(
         page_size=page_size,
         self_href=self_href,
         start_href=str(request.url_for("opds_root")),
+    )
+    return Response(content=payload, media_type="application/atom+xml;profile=opds-catalog;kind=acquisition")
+
+
+@router.get("/genres", name="opds_genre_groups_feed")
+async def opds_genre_groups_feed(
+    request: Request,
+    session: AsyncSession = Depends(get_database_session),
+) -> Response:
+    payload = build_group_feed(
+        request,
+        title="Genres",
+        route_name="opds_genre_group_feed",
+        entries=await list_grouped_metadata(session, field_name="genres_json"),
+        self_href=str(request.url),
+    )
+    return Response(content=payload, media_type="application/atom+xml;profile=opds-catalog;kind=navigation")
+
+
+@router.get("/genres/{group_slug}", name="opds_genre_group_feed")
+async def opds_genre_group_feed(
+    group_slug: str,
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=50),
+    session: AsyncSession = Depends(get_database_session),
+) -> Response:
+    records, total_count, group_name = await list_downloadable_books_by_group(
+        session,
+        field_name="genres_json",
+        group_slug=group_slug,
+        page=page,
+        page_size=page_size,
+    )
+    if group_name is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Genre group not found")
+    payload = build_books_feed(
+        request,
+        title=f"Genre: {group_name}",
+        feed_id=str(request.url),
+        records=records,
+        total_count=total_count,
+        page=page,
+        page_size=page_size,
+        self_href=str(request.url),
+        start_href=str(request.url_for("opds_genre_groups_feed")),
+    )
+    return Response(content=payload, media_type="application/atom+xml;profile=opds-catalog;kind=acquisition")
+
+
+@router.get("/tags", name="opds_tag_groups_feed")
+async def opds_tag_groups_feed(
+    request: Request,
+    session: AsyncSession = Depends(get_database_session),
+) -> Response:
+    payload = build_group_feed(
+        request,
+        title="Tags",
+        route_name="opds_tag_group_feed",
+        entries=await list_grouped_metadata(session, field_name="tags_json"),
+        self_href=str(request.url),
+    )
+    return Response(content=payload, media_type="application/atom+xml;profile=opds-catalog;kind=navigation")
+
+
+@router.get("/tags/{group_slug}", name="opds_tag_group_feed")
+async def opds_tag_group_feed(
+    group_slug: str,
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=50),
+    session: AsyncSession = Depends(get_database_session),
+) -> Response:
+    records, total_count, group_name = await list_downloadable_books_by_group(
+        session,
+        field_name="tags_json",
+        group_slug=group_slug,
+        page=page,
+        page_size=page_size,
+    )
+    if group_name is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag group not found")
+    payload = build_books_feed(
+        request,
+        title=f"Tag: {group_name}",
+        feed_id=str(request.url),
+        records=records,
+        total_count=total_count,
+        page=page,
+        page_size=page_size,
+        self_href=str(request.url),
+        start_href=str(request.url_for("opds_tag_groups_feed")),
     )
     return Response(content=payload, media_type="application/atom+xml;profile=opds-catalog;kind=acquisition")
 

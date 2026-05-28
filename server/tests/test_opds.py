@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -16,6 +17,8 @@ async def create_downloadable_book(
     summary: str = "Summary",
     chapter_count: int = 2,
     cover_url: str | None = "https://example.com/cover.jpg",
+    genres: list[dict[str, str]] | None = None,
+    tags: list[dict[str, str]] | None = None,
 ) -> tuple[Book, Artifact]:
     book = Book(
         slug=slug,
@@ -24,6 +27,8 @@ async def create_downloadable_book(
         author=author,
         summary=summary,
         cover_url=cover_url,
+        genres_json=json.dumps(genres or [], ensure_ascii=False),
+        tags_json=json.dumps(tags or [], ensure_ascii=False),
         available_chapters=chapter_count,
     )
     db.add(book)
@@ -70,7 +75,7 @@ async def test_opds_root_exposes_navigation_sections(client, db, temp_data_dir) 
     assert root.findtext("atom:title", namespaces=ATOM_NS) == "Ranobarr Catalog"
 
     titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
-    assert titles == ["All Books", "Recently Updated"]
+    assert titles == ["All Books", "Recently Updated", "Genres", "Tags"]
 
     links = {link.attrib["rel"]: link.attrib["href"] for link in root.findall("atom:link", ATOM_NS)}
     assert links["self"].endswith("/opds")
@@ -176,3 +181,32 @@ async def test_opds_cover_streams_cached_image(client, db, temp_data_dir) -> Non
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/jpeg")
     assert response.content == b"image-bytes"
+
+
+async def test_opds_group_feeds_expose_genres_and_tags(client, db, temp_data_dir) -> None:
+    await create_downloadable_book(
+        db,
+        temp_data_dir,
+        slug="group-book",
+        title="Group Book",
+        genres=[{"name": "Fantasy", "slug": "fantasy"}],
+        tags=[{"name": "Academy", "slug": "academy"}],
+    )
+
+    response = await client.get("/opds/genres")
+    assert response.status_code == 200
+    root = ET.fromstring(response.content)
+    genre_titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
+    assert genre_titles == ["Fantasy"]
+
+    response = await client.get("/opds/genres/fantasy")
+    assert response.status_code == 200
+    root = ET.fromstring(response.content)
+    titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
+    assert titles == ["Group Book"]
+
+    response = await client.get("/opds/tags")
+    assert response.status_code == 200
+    root = ET.fromstring(response.content)
+    tag_titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
+    assert tag_titles == ["Academy"]
