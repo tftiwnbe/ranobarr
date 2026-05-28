@@ -18,6 +18,7 @@ from .schemas import (
     TrackedBookSummary,
 )
 from .service import (
+    delete_tracked_book,
     get_tracked_book_detail,
     list_tracked_books,
     preview_remote_book,
@@ -81,6 +82,16 @@ async def get_tracked_book(
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked book not found")
     return detail
+
+
+@router.delete("/books/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tracked_book_route(
+    book_id: str,
+    session: AsyncSession = Depends(get_database_session),
+) -> None:
+    deleted = await delete_tracked_book(session, book_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked book not found")
 
 
 @router.patch("/books/{book_id}/branch", response_model=JobEnqueueResponse, status_code=status.HTTP_202_ACCEPTED)

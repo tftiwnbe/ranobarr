@@ -2,15 +2,26 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.builds.storage import artifact_file_path, cache_file_path
 from app.core.errors import TrackingError
 from app.core.jobs import enqueue_job
 from app.core.titles import normalize_book_title
-from app.models import Book, BookState, ChapterSnapshot, JobRecord, TrackRule
+from app.models import (
+    Artifact,
+    Book,
+    BookState,
+    ChapterContentCache,
+    ChapterSnapshot,
+    JobEvent,
+    JobRecord,
+    TrackRule,
+)
 from app.ranobelib import (
     RanobeLibClient,
     RanobeLibError,
@@ -153,6 +164,25 @@ def extract_named_items(raw_items: Any) -> list[NamedTagSummary]:
     return items
 
 
+def extract_primary_credit(raw_items: Any) -> str | None:
+    items = raw_items if isinstance(raw_items, list) else [raw_items]
+    for item in items or []:
+        if isinstance(item, dict):
+            name = str(item.get("rus_name") or item.get("name") or item.get("title") or "").strip()
+        else:
+            name = str(item or "").strip()
+        if name:
+            return name
+    return None
+
+
+def resolve_author_label(novel_info: dict[str, Any]) -> str | None:
+    author = extract_primary_credit(novel_info.get("authors"))
+    if author:
+        return author
+    return extract_primary_credit(novel_info.get("publisher"))
+
+
 def serialize_named_items(items: list[NamedTagSummary]) -> str:
     return json.dumps([item.model_dump() for item in items], ensure_ascii=False)
 
@@ -286,10 +316,7 @@ async def resolve_remote_book(
         or novel_info.get("name")
         or slug
     )
-    author = None
-    authors = novel_info.get("authors") or []
-    if authors:
-        author = authors[0].get("name")
+    author = resolve_author_label(novel_info)
 
     cover = novel_info.get("cover") or {}
     cover_url = cover.get("default") or cover.get("thumbnail") or cover.get("md")
@@ -621,8 +648,7 @@ async def process_check_updates_job(
 
     now = utcnow()
     latest_remote_key = selected_chapters[-1].chapter_key if selected_chapters else None
-    authors = novel_info.get("authors") or []
-    author = authors[0].get("name") if authors else None
+    author = resolve_author_label(novel_info)
     cover = novel_info.get("cover") or {}
     book.available_chapters = len(selected_chapters)
     book.title = normalize_book_title(
@@ -663,6 +689,63 @@ async def process_check_updates_job(
             )
         ),
     }
+
+
+async def delete_tracked_book(session: AsyncSession, book_id: str) -> bool:
+    book = await session.get(Book, book_id)
+    if book is None:
+        return False
+
+    artifacts_result = await session.exec(select(Artifact).where(Artifact.book_id == book_id))
+    artifacts = artifacts_result.all()
+    for artifact in artifacts:
+        artifact_file_path(artifact.relative_path).unlink(missing_ok=True)
+        await session.delete(artifact)
+
+    cache_result = await session.exec(select(ChapterContentCache).where(ChapterContentCache.book_id == book_id))
+    cache_entries = cache_result.all()
+    for cache_entry in cache_entries:
+        cache_file_path(cache_entry.relative_path).unlink(missing_ok=True)
+        await session.delete(cache_entry)
+
+    snapshots_result = await session.exec(select(ChapterSnapshot).where(ChapterSnapshot.book_id == book_id))
+    for snapshot in snapshots_result.all():
+        await session.delete(snapshot)
+
+    state_result = await session.exec(select(BookState).where(BookState.book_id == book_id))
+    state = state_result.one_or_none()
+    if state is not None:
+        await session.delete(state)
+
+    track_rule_result = await session.exec(select(TrackRule).where(TrackRule.book_id == book_id))
+    track_rule = track_rule_result.one_or_none()
+    if track_rule is not None:
+        await session.delete(track_rule)
+
+    job_result = await session.exec(select(JobRecord).where(JobRecord.book_id == book_id))
+    jobs = job_result.all()
+    if jobs:
+        job_ids = [job.id for job in jobs]
+        job_events_result = await session.exec(select(JobEvent).where(JobEvent.job_id.in_(job_ids)))
+        for event in job_events_result.all():
+            await session.delete(event)
+        for job in jobs:
+            await session.delete(job)
+
+    await session.delete(book)
+    await session.commit()
+
+    for relative_dir in (
+        Path("artifacts") / book_id,
+        Path("cache") / "chapters" / book_id,
+    ):
+        absolute_dir = cache_file_path(str(relative_dir))
+        try:
+            absolute_dir.rmdir()
+        except OSError:
+            pass
+
+    return True
 
 
 async def update_tracked_book_branch(

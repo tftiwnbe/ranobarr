@@ -1,11 +1,12 @@
 from sqlmodel import select
 
 from app.core.titles import normalize_book_title
-from app.models import Artifact, Book, JobEvent, JobRecord
+from app.models import Artifact, Book, BookState, ChapterContentCache, ChapterSnapshot, JobEvent, JobRecord, TrackRule
 from app.tracking.service import (
     branch_id_of,
     chapter_key,
     normalize_summary_value,
+    resolve_author_label,
     select_chapters_for_rule,
 )
 
@@ -68,6 +69,11 @@ def test_normalize_summary_value_from_doc_payload() -> None:
 def test_normalize_book_title_strips_novella_suffix() -> None:
     assert normalize_book_title("Title (Новелла)") == "Title"
     assert normalize_book_title("Title   (новелла)   ") == "Title"
+
+
+def test_resolve_author_label_falls_back_to_publisher() -> None:
+    assert resolve_author_label({"authors": [{"name": "Author"}], "publisher": {"name": "Publisher"}}) == "Author"
+    assert resolve_author_label({"publisher": {"name": "Publisher"}}) == "Publisher"
 
 
 async def test_healthcheck(client) -> None:
@@ -408,3 +414,64 @@ async def test_branch_update_endpoint_enqueues_refresh(client, db) -> None:
         )
     ).one()
     assert '"selected_branch_id": "5"' in queued_job.payload_json
+
+
+async def test_delete_tracked_book_removes_related_rows_and_files(client, db, temp_data_dir) -> None:
+    book = Book(
+        slug="delete-book",
+        source_url="https://ranobelib.me/ru/book/delete-book",
+        title="Delete Book",
+        author="Delete Author",
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    artifact_path = temp_data_dir / "artifacts" / book.id / "book.epub"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(b"epub")
+    cache_path = temp_data_dir / "cache" / "chapters" / book.id / "v1_ch1.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text("{}", encoding="utf-8")
+
+    db.add(TrackRule(book_id=book.id))
+    db.add(BookState(book_id=book.id, last_remote_chapter_key="v1_ch1"))
+    db.add(ChapterSnapshot(book_id=book.id, chapter_key="v1_ch1", volume="1", number="1"))
+    db.add(
+        ChapterContentCache(
+            book_id=book.id,
+            chapter_key="v1_ch1",
+            content_type="html",
+            relative_path=str(cache_path.relative_to(temp_data_dir)),
+            content_hash="hash",
+        )
+    )
+    db.add(
+        Artifact(
+            book_id=book.id,
+            format="epub",
+            relative_path=str(artifact_path.relative_to(temp_data_dir)),
+            chapter_count=1,
+            file_size_bytes=4,
+        )
+    )
+    job = JobRecord(type="check_updates", status="completed", book_id=book.id)
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    db.add(JobEvent(job_id=job.id, level="info", event_type="job.completed", message="done"))
+    await db.commit()
+
+    response = await client.delete(f"/api/v1/tracking/books/{book.id}")
+    assert response.status_code == 204
+
+    assert await db.get(Book, book.id) is None
+    assert (await db.exec(select(TrackRule).where(TrackRule.book_id == book.id))).first() is None
+    assert (await db.exec(select(BookState).where(BookState.book_id == book.id))).first() is None
+    assert (await db.exec(select(ChapterSnapshot).where(ChapterSnapshot.book_id == book.id))).first() is None
+    assert (await db.exec(select(ChapterContentCache).where(ChapterContentCache.book_id == book.id))).first() is None
+    assert (await db.exec(select(Artifact).where(Artifact.book_id == book.id))).first() is None
+    assert (await db.exec(select(JobRecord).where(JobRecord.book_id == book.id))).first() is None
+    assert (await db.exec(select(JobEvent).where(JobEvent.job_id == job.id))).first() is None
+    assert not artifact_path.exists()
+    assert not cache_path.exists()
