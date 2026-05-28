@@ -492,25 +492,6 @@
         >
       </div>
 
-      <!-- Drawer tabs -->
-      <div class="drawer-tabs">
-        {#each ["track", "auth", "jobs"] as const as tab}
-          <button
-            type="button"
-            class="drawer-tab"
-            class:active={drawerTab === tab}
-            onclick={() => {
-              drawerTab = tab;
-            }}
-          >
-            {tab}
-            {#if tab === "jobs" && jobs.length > 0}
-              <span class="tab-badge">{jobs.length}</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-
       {#key drawerTab}
         <div class="drawer-panel">
           <!-- Track tab -->
