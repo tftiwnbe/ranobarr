@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import ToastContainer from "./lib/components/ToastContainer.svelte";
   import { toast } from "./lib/components/toast-store.svelte";
   import {
@@ -40,12 +40,14 @@
 
   // UI state
   let drawerOpen = $state(false);
+  let drawerClosing = $state(false);
   let drawerTab = $state<"track" | "auth" | "jobs">("track");
   let searchQuery = $state("");
   let sortMode = $state<"title" | "checked" | "chapters">("title");
   let sortAsc = $state(true);
   let filterOpen = $state(false);
   let filterHasEpub = $state(false);
+  let drawerCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ─── Derived ─────���───────────────────�─────────────────
   const runningJobs = $derived(
@@ -168,7 +170,7 @@
         selected_branch_id: null,
       });
       bookUrl = "";
-      drawerOpen = false;
+      closeDrawer();
       toast.success("tracked title added");
       await loadDashboard();
     } catch (error) {
@@ -236,11 +238,31 @@
   }
 
   function openDrawer(tab: typeof drawerTab) {
+    if (drawerCloseTimer) {
+      clearTimeout(drawerCloseTimer);
+      drawerCloseTimer = null;
+    }
     drawerTab = tab;
     drawerOpen = true;
+    drawerClosing = false;
+  }
+
+  function closeDrawer() {
+    if (!drawerOpen || drawerClosing) return;
+    drawerClosing = true;
+    drawerCloseTimer = setTimeout(() => {
+      drawerOpen = false;
+      drawerClosing = false;
+      drawerCloseTimer = null;
+    }, 300);
   }
 
   onMount(loadDashboard);
+  onDestroy(() => {
+    if (drawerCloseTimer) {
+      clearTimeout(drawerCloseTimer);
+    }
+  });
 </script>
 
 <svelte:head>
@@ -463,189 +485,184 @@
   {#if drawerOpen}
     <div
       class="drawer-backdrop"
+      class:closing={drawerClosing}
       role="button"
       tabindex="-1"
       aria-label="Close drawer"
-      onclick={() => {
-        drawerOpen = false;
-      }}
+      onclick={closeDrawer}
       onkeydown={(e) => {
-        if (e.key === "Escape") drawerOpen = false;
+        if (e.key === "Escape") closeDrawer();
       }}
     ></div>
 
-    <div class="drawer" role="dialog" aria-modal="true">
-      <div class="drawer-handle"><div class="drawer-handle-bar"></div></div>
+    <div class="drawer-shell" class:closing={drawerClosing}>
+      <div class="drawer" class:closing={drawerClosing} role="dialog" aria-modal="true">
+        <div class="drawer-handle"><div class="drawer-handle-bar"></div></div>
 
-      <div class="drawer-header">
-        <span class="drawer-title">
-          {#if drawerTab === "track"}add title
-          {:else if drawerTab === "auth"}ranobelib auth
-          {:else}recent jobs{/if}
-        </span>
-        <button
-          type="button"
-          class="drawer-close"
-          onclick={() => {
-            drawerOpen = false;
-          }}>✕</button
-        >
-      </div>
+        <div class="drawer-header">
+          <span class="drawer-title">
+            {#if drawerTab === "track"}add title
+            {:else if drawerTab === "auth"}ranobelib auth
+            {:else}recent jobs{/if}
+          </span>
+          <button type="button" class="drawer-close" onclick={closeDrawer}>✕</button>
+        </div>
 
-      {#key drawerTab}
-        <div class="drawer-panel">
-          <!-- Track tab -->
-          {#if drawerTab === "track"}
-            <div class="drawer-body">
-              <div class="form-field">
-                <label for="book-url" class="form-label">ranobelib url</label>
-                <input
-                  id="book-url"
-                  class="form-input"
-                  type="url"
-                  placeholder="https://ranobelib.me/ru/book/..."
-                  bind:value={bookUrl}
-                />
-              </div>
+        {#key drawerTab}
+          <div class="drawer-panel">
+            <!-- Track tab -->
+            {#if drawerTab === "track"}
+              <div class="drawer-body">
+                <div class="form-field">
+                  <label for="book-url" class="form-label">ranobelib url</label>
+                  <input
+                    id="book-url"
+                    class="form-input"
+                    type="url"
+                    placeholder="https://ranobelib.me/ru/book/..."
+                    bind:value={bookUrl}
+                  />
+                </div>
 
-              <div class="form-field">
-                <label for="branch-mode" class="form-label">branch strategy</label>
-                <select
-                  id="branch-mode"
-                  class="form-select form-input"
-                  bind:value={branchMode}
-                >
-                  <option value="default">default branch</option>
-                  <option value="selected">selected branch later</option>
-                </select>
-              </div>
-
-              <button
-                type="button"
-                class="btn btn-solid"
-                style="width:100%;height:44px;"
-                disabled={submitting || !bookUrl.trim()}
-                onclick={() => void submitBook()}
-              >
-                {submitting ? "tracking..." : "track title"}
-              </button>
-            </div>
-
-            <!-- Auth tab -->
-          {:else if drawerTab === "auth"}
-            <div class="drawer-body">
-              <div class="status-row">
-                <div class="status-cell">
-                  <div class="status-cell-label">access</div>
-                  <div
-                    class="status-cell-value"
-                    class:active={credential?.has_access_token}
+                <div class="form-field">
+                  <label for="branch-mode" class="form-label">branch strategy</label>
+                  <select
+                    id="branch-mode"
+                    class="form-select form-input"
+                    bind:value={branchMode}
                   >
-                    {credential?.has_access_token ? "stored" : "missing"}
-                  </div>
+                    <option value="default">default branch</option>
+                    <option value="selected">selected branch later</option>
+                  </select>
                 </div>
-                <div class="status-cell">
-                  <div class="status-cell-label">refresh</div>
-                  <div
-                    class="status-cell-value"
-                    class:active={credential?.has_refresh_token}
-                  >
-                    {credential?.has_refresh_token ? "stored" : "missing"}
-                  </div>
-                </div>
-                <div class="status-cell">
-                  <div class="status-cell-label">remote</div>
-                  <div
-                    class="status-cell-value"
-                    class:active={validation?.valid}
-                    class:error={validation && !validation.valid}
-                  >
-                    {validation?.valid ? "valid" : validation ? "failed" : "idle"}
-                  </div>
-                </div>
-              </div>
 
-              {#if validation?.username || validation?.email}
-                <div
-                  style="font-size:11px;color:var(--text-muted);padding:0.5rem 0.75rem;border:1px solid var(--line);background:var(--void-3);"
-                >
-                  logged in as {validation.username ?? validation.email}
-                </div>
-              {/if}
-
-              <div class="form-field">
-                <label for="access-token" class="form-label">access token</label>
-                <textarea
-                  id="access-token"
-                  class="form-textarea"
-                  placeholder="paste bearer token"
-                  bind:value={accessToken}
-                ></textarea>
-              </div>
-
-              <div class="form-field">
-                <label for="refresh-token" class="form-label">refresh token</label>
-                <textarea
-                  id="refresh-token"
-                  class="form-textarea"
-                  placeholder="paste refresh token"
-                  bind:value={refreshToken}
-                ></textarea>
-              </div>
-
-              <div style="display:flex;gap:0.5rem;">
-                <button
-                  type="button"
-                  class="btn btn-outline"
-                  style="flex:1;"
-                  disabled={validating}
-                  onclick={() => void runValidation()}
-                >
-                  {validating ? "checking..." : "validate"}
-                </button>
                 <button
                   type="button"
                   class="btn btn-solid"
-                  style="flex:1;"
-                  disabled={submitting}
-                  onclick={() => void saveCredential()}
+                  style="width:100%;height:44px;"
+                  disabled={submitting || !bookUrl.trim()}
+                  onclick={() => void submitBook()}
                 >
-                  {submitting ? "saving..." : "save tokens"}
+                  {submitting ? "tracking..." : "track title"}
                 </button>
               </div>
-            </div>
 
-            <!-- Jobs tab -->
-          {:else}
-            <div class="drawer-body">
-              {#if jobs.length === 0}
-                <div
-                  style="padding:2rem 0;text-align:center;color:var(--text-ghost);font-size:12px;"
-                >
-                  no jobs yet
-                </div>
-              {:else}
-                {#each jobs as job}
-                  <div class="job-row">
-                    <div>
-                      <div class="job-type">{job.type}</div>
-                      <div class="job-status {job.status}">{job.status}</div>
-                    </div>
-                    <div class="job-time">
-                      <div
-                        style="color:var(--text-ghost);font-size:10px;margin-bottom:1px;"
-                      >
-                        {job.book_id ? job.book_id.slice(0, 16) + "…" : "global"}
-                      </div>
-                      {formatDate(job.created_at)}
+              <!-- Auth tab -->
+            {:else if drawerTab === "auth"}
+              <div class="drawer-body">
+                <div class="status-row">
+                  <div class="status-cell">
+                    <div class="status-cell-label">access</div>
+                    <div
+                      class="status-cell-value"
+                      class:active={credential?.has_access_token}
+                    >
+                      {credential?.has_access_token ? "stored" : "missing"}
                     </div>
                   </div>
-                {/each}
-              {/if}
-            </div>
-          {/if}
-        </div>
-      {/key}
+                  <div class="status-cell">
+                    <div class="status-cell-label">refresh</div>
+                    <div
+                      class="status-cell-value"
+                      class:active={credential?.has_refresh_token}
+                    >
+                      {credential?.has_refresh_token ? "stored" : "missing"}
+                    </div>
+                  </div>
+                  <div class="status-cell">
+                    <div class="status-cell-label">remote</div>
+                    <div
+                      class="status-cell-value"
+                      class:active={validation?.valid}
+                      class:error={validation && !validation.valid}
+                    >
+                      {validation?.valid ? "valid" : validation ? "failed" : "idle"}
+                    </div>
+                  </div>
+                </div>
+
+                {#if validation?.username || validation?.email}
+                  <div
+                    style="font-size:11px;color:var(--text-muted);padding:0.5rem 0.75rem;border:1px solid var(--line);background:var(--void-3);"
+                  >
+                    logged in as {validation.username ?? validation.email}
+                  </div>
+                {/if}
+
+                <div class="form-field">
+                  <label for="access-token" class="form-label">access token</label>
+                  <textarea
+                    id="access-token"
+                    class="form-textarea"
+                    placeholder="paste bearer token"
+                    bind:value={accessToken}
+                  ></textarea>
+                </div>
+
+                <div class="form-field">
+                  <label for="refresh-token" class="form-label">refresh token</label>
+                  <textarea
+                    id="refresh-token"
+                    class="form-textarea"
+                    placeholder="paste refresh token"
+                    bind:value={refreshToken}
+                  ></textarea>
+                </div>
+
+                <div style="display:flex;gap:0.5rem;">
+                  <button
+                    type="button"
+                    class="btn btn-outline"
+                    style="flex:1;"
+                    disabled={validating}
+                    onclick={() => void runValidation()}
+                  >
+                    {validating ? "checking..." : "validate"}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-solid"
+                    style="flex:1;"
+                    disabled={submitting}
+                    onclick={() => void saveCredential()}
+                  >
+                    {submitting ? "saving..." : "save tokens"}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Jobs tab -->
+            {:else}
+              <div class="drawer-body">
+                {#if jobs.length === 0}
+                  <div
+                    style="padding:2rem 0;text-align:center;color:var(--text-ghost);font-size:12px;"
+                  >
+                    no jobs yet
+                  </div>
+                {:else}
+                  {#each jobs as job}
+                    <div class="job-row">
+                      <div>
+                        <div class="job-type">{job.type}</div>
+                        <div class="job-status {job.status}">{job.status}</div>
+                      </div>
+                      <div class="job-time">
+                        <div
+                          style="color:var(--text-ghost);font-size:10px;margin-bottom:1px;"
+                        >
+                          {job.book_id ? job.book_id.slice(0, 16) + "…" : "global"}
+                        </div>
+                        {formatDate(job.created_at)}
+                      </div>
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/key}
+      </div>
     </div>
   {/if}
 
