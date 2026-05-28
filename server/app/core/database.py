@@ -62,8 +62,11 @@ def _run_upgrade(connection, cfg):
 
 
 async def run_async_upgrade() -> None:
-    alembic_ini_path = Path(__file__).resolve().parent.parent.parent / "alembic.ini"
+    server_dir = Path(__file__).resolve().parents[2]
+    alembic_ini_path = server_dir / "alembic.ini"
     cfg = config.Config(str(alembic_ini_path))
+    cfg.set_main_option("script_location", str(server_dir / "alembic"))
+    cfg.set_main_option("prepend_sys_path", str(server_dir))
     cfg.set_main_option("sqlalchemy.url", get_settings().app.database_url)
 
     async with sessionmanager.connect() as connection:

@@ -26,7 +26,10 @@ async def engine(tmp_path_factory) -> AsyncEngine:
 
 
 def _run_migrations(connection):
-    cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    server_dir = Path(__file__).resolve().parent.parent
+    cfg = Config(str(server_dir / "alembic.ini"))
+    cfg.set_main_option("script_location", str(server_dir / "alembic"))
+    cfg.set_main_option("prepend_sys_path", str(server_dir))
     cfg.attributes["connection"] = connection
     command.upgrade(cfg, "head")
 
