@@ -1,5 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import Alert from "./lib/components/Alert.svelte";
+  import Button from "./lib/components/Button.svelte";
+  import InputField from "./lib/components/InputField.svelte";
+  import Panel from "./lib/components/Panel.svelte";
+  import StarField from "./lib/components/StarField.svelte";
   import {
     createTrackedBook,
     getCredential,
@@ -72,7 +77,7 @@
         access_token: accessToken.trim() || null,
         refresh_token: refreshToken.trim() || null
       });
-      successMessage = "Stored RanobeLib credentials.";
+      successMessage = "stored ranobelib credentials";
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : "Failed to store credentials";
     } finally {
@@ -86,7 +91,7 @@
     successMessage = "";
     try {
       validation = await validateCredential();
-      successMessage = validation.valid ? "Credential validated against RanobeLib." : "Credential check failed.";
+      successMessage = validation.valid ? "credential validated against ranobelib" : "credential check failed";
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : "Failed to validate credentials";
     } finally {
@@ -105,7 +110,7 @@
         selected_branch_id: null
       });
       bookUrl = "";
-      successMessage = "Tracked title added.";
+      successMessage = "tracked title added";
       await loadDashboard();
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : "Failed to track title";
@@ -121,10 +126,10 @@
     try {
       if (action === "check") {
         await triggerCheck(bookId);
-        successMessage = "Queued update check.";
+        successMessage = "queued update check";
       } else {
         await triggerBuild(bookId);
-        successMessage = "Queued rebuild.";
+        successMessage = "queued rebuild";
       }
       await loadDashboard();
     } catch (error) {
@@ -135,27 +140,18 @@
   }
 
   function artifactUrl(book: BookCard): string | null {
-    if (!book.latestArtifact) {
-      return null;
-    }
-    return `/api/v1/artifacts/${book.latestArtifact.id}/download`;
+    return book.latestArtifact ? `/api/v1/artifacts/${book.latestArtifact.id}/download` : null;
   }
 
   function formatDate(value: string | null): string {
-    if (!value) {
-      return "Not yet";
-    }
+    if (!value) return "not yet";
     return new Date(value).toLocaleString();
   }
 
   function formatBytes(value: number): string {
-    if (value < 1024) {
-      return `${value} B`;
-    }
-    if (value < 1024 * 1024) {
-      return `${(value / 1024).toFixed(1)} KB`;
-    }
-    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    if (value < 1024) return `${value} b`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} kb`;
+    return `${(value / (1024 * 1024)).toFixed(1)} mb`;
   }
 
   onMount(loadDashboard);
@@ -169,208 +165,181 @@
   />
 </svelte:head>
 
-<div class="shell">
-  <div class="grain"></div>
+<div class="page-shell">
+  <div class="grid-overlay"></div>
+  <StarField count={44} />
+  <div class="orbital-ring" aria-hidden="true">
+    <svg viewBox="0 0 200 200">
+      <ellipse cx="100" cy="100" rx="95" ry="28" fill="none" stroke="rgba(140,140,160,0.24)" stroke-width="0.45"></ellipse>
+      <ellipse cx="100" cy="100" rx="74" ry="22" fill="none" stroke="rgba(140,140,160,0.16)" stroke-width="0.35" transform="rotate(60 100 100)"></ellipse>
+    </svg>
+  </div>
 
-  <header class="hero">
-    <div class="hero-copy">
-      <p class="eyebrow">RanobeLib Tracker</p>
-      <h1>One quiet control room for update checks and EPUB rebuilds.</h1>
+  <main class="page-wrap">
+    <section class="stack" style="margin-bottom:1rem;">
+      <div class="eyebrow">ranobelib control plane</div>
+      <h1 class="display">ranobarr</h1>
       <p class="lede">
-        Static Svelte frontend, Python backend, local storage. No extra service split.
+        same product family as mangarr. simpler surface, same void palette, same compact system controls.
       </p>
-    </div>
-    <div class="hero-metrics">
-      <article>
-        <span>{books.length}</span>
-        <p>tracked titles</p>
-      </article>
-      <article>
-        <span>{jobs.filter((job) => job.status === "running").length}</span>
-        <p>running jobs</p>
-      </article>
-      <article>
-        <span>{jobs.filter((job) => job.status === "failed").length}</span>
-        <p>failed jobs</p>
-      </article>
-    </div>
-  </header>
-
-  {#if errorMessage}
-    <div class="banner error">{errorMessage}</div>
-  {/if}
-
-  {#if successMessage}
-    <div class="banner success">{successMessage}</div>
-  {/if}
-
-  <main class="dashboard">
-    <section class="panel auth-panel">
-      <div class="panel-heading">
-        <div>
-          <p class="panel-kicker">Source auth</p>
-          <h2>RanobeLib session</h2>
-        </div>
-        <button class="ghost-button" on:click={runValidation} disabled={validating}>
-          {validating ? "Checking..." : "Validate"}
-        </button>
-      </div>
-
-      <div class="status-strip">
-        <div>
-          <span class:active={credential?.has_access_token}>Access token</span>
-          <strong>{credential?.has_access_token ? "stored" : "missing"}</strong>
-        </div>
-        <div>
-          <span class:active={credential?.has_refresh_token}>Refresh token</span>
-          <strong>{credential?.has_refresh_token ? "stored" : "missing"}</strong>
-        </div>
-        <div>
-          <span class:active={validation?.valid}>Remote check</span>
-          <strong>{validation?.valid ? "valid" : validation ? "failed" : "not run"}</strong>
-        </div>
-      </div>
-
-      {#if validation}
-        <div class="validation-card">
-          <p>{validation.valid ? "Authenticated user" : "Last validation result"}</p>
-          <strong>{validation.username ?? validation.email ?? validation.error}</strong>
-        </div>
-      {/if}
-
-      <form class="stack-form" on:submit|preventDefault={saveCredential}>
-        <label>
-          <span>Access token</span>
-          <textarea bind:value={accessToken} rows="3" placeholder="Paste bearer token"></textarea>
-        </label>
-        <label>
-          <span>Refresh token</span>
-          <textarea bind:value={refreshToken} rows="3" placeholder="Paste refresh token"></textarea>
-        </label>
-        <button class="solid-button" type="submit" disabled={submitting}>Save tokens</button>
-      </form>
     </section>
 
-    <section class="panel intake-panel">
-      <div class="panel-heading">
-        <div>
-          <p class="panel-kicker">Tracking</p>
-          <h2>Add a title</h2>
-        </div>
-      </div>
-
-      <form class="stack-form" on:submit|preventDefault={submitBook}>
-        <label>
-          <span>RanobeLib URL</span>
-          <input bind:value={bookUrl} type="url" placeholder="https://ranobelib.me/ru/book/..." />
-        </label>
-        <label>
-          <span>Branch strategy</span>
-          <select bind:value={branchMode}>
-            <option value="default">Default branch</option>
-            <option value="selected">Selected branch later</option>
-          </select>
-        </label>
-        <button class="solid-button" type="submit" disabled={submitting}>Track title</button>
-      </form>
+    <section class="metrics-grid" style="margin-bottom:1rem;">
+      <article class="metric-card">
+        <span class="metric-value">{books.length}</span>
+        <div class="metric-label">tracked titles</div>
+      </article>
+      <article class="metric-card">
+        <span class="metric-value">{jobs.filter((job) => job.status === "running").length}</span>
+        <div class="metric-label">running jobs</div>
+      </article>
+      <article class="metric-card">
+        <span class="metric-value">{jobs.filter((job) => job.status === "failed").length}</span>
+        <div class="metric-label">failed jobs</div>
+      </article>
     </section>
 
-    <section class="panel library-panel">
-      <div class="panel-heading">
-        <div>
-          <p class="panel-kicker">Library</p>
-          <h2>Tracked titles</h2>
-        </div>
-        <button class="ghost-button" on:click={loadDashboard} disabled={loading}>
-          {loading ? "Refreshing..." : "Refresh"}
-        </button>
+    {#if errorMessage}
+      <div style="margin-bottom:1rem;">
+        <Alert variant="error" message={errorMessage} />
       </div>
+    {/if}
 
-      {#if loading}
-        <div class="empty-state">Loading dashboard...</div>
-      {:else if books.length === 0}
-        <div class="empty-state">No titles tracked yet.</div>
-      {:else}
-        <div class="book-grid">
-          {#each books as book}
-            <article class="book-card">
-              <div class="book-meta">
-                <p class="book-slug">{book.slug}</p>
-                <h3>{book.title}</h3>
-                <div class="book-chips">
-                  <span>{book.known_remote_chapters} synced chapters</span>
-                  <span>{book.last_remote_chapter_key ?? "no remote key yet"}</span>
-                </div>
+    {#if successMessage}
+      <div style="margin-bottom:1rem;">
+        <Alert variant="success" message={successMessage} />
+      </div>
+    {/if}
+
+    <section class="dashboard-grid">
+      <div class="left-column">
+        <Panel eyebrow="source auth" title="ranobelib session" actionLabel={validating ? "checking..." : "validate"} actionDisabled={validating} onAction={runValidation}>
+          <div class="stack">
+            <div class="status-grid">
+              <div class="status-card">
+                <div class="status-label">access token</div>
+                <div class:active={credential?.has_access_token} class="status-value">{credential?.has_access_token ? "stored" : "missing"}</div>
               </div>
+              <div class="status-card">
+                <div class="status-label">refresh token</div>
+                <div class:active={credential?.has_refresh_token} class="status-value">{credential?.has_refresh_token ? "stored" : "missing"}</div>
+              </div>
+              <div class="status-card">
+                <div class="status-label">remote check</div>
+                <div class:active={validation?.valid} class="status-value">{validation?.valid ? "valid" : validation ? "failed" : "idle"}</div>
+              </div>
+            </div>
 
-              <dl class="book-stats">
-                <div>
-                  <dt>Last checked</dt>
-                  <dd>{formatDate(book.last_checked_at)}</dd>
-                </div>
-                <div>
-                  <dt>Build artifact</dt>
-                  <dd>
-                    {#if book.latestArtifact}
-                      {formatBytes(book.latestArtifact.file_size_bytes)}
-                    {:else}
-                      Missing
+            {#if validation}
+              <div class="status-card">
+                <div class="status-label">validation</div>
+                <div class="meta-value">{validation.username ?? validation.email ?? validation.error}</div>
+              </div>
+            {/if}
+
+            <form class="split-form" on:submit|preventDefault={saveCredential}>
+              <InputField label="access token" bind:value={accessToken} multiline={true} placeholder="paste bearer token" />
+              <InputField label="refresh token" bind:value={refreshToken} multiline={true} placeholder="paste refresh token" />
+              <Button type="submit" loading={submitting}>save tokens</Button>
+            </form>
+          </div>
+        </Panel>
+
+        <Panel eyebrow="tracking" title="add a title">
+          <form class="split-form" on:submit|preventDefault={submitBook}>
+            <InputField label="ranobelib url" bind:value={bookUrl} placeholder="https://ranobelib.me/ru/book/..." />
+            <label class="stack" style="gap:0.35rem;">
+              <span class="eyebrow">branch strategy</span>
+              <select bind:value={branchMode} style="width:100%;height:48px;padding:0 1rem;border:1px solid var(--line);background:var(--void-2);color:var(--text);">
+                <option value="default">default branch</option>
+                <option value="selected">selected branch later</option>
+              </select>
+            </label>
+            <Button type="submit" loading={submitting}>track title</Button>
+          </form>
+        </Panel>
+      </div>
+
+      <div class="right-column">
+        <Panel eyebrow="library" title="tracked titles" actionLabel={loading ? "refreshing..." : "refresh"} actionDisabled={loading} onAction={loadDashboard}>
+          {#if loading}
+            <div class="empty-state">loading dashboard...</div>
+          {:else if books.length === 0}
+            <div class="empty-state">no titles tracked yet</div>
+          {:else}
+            <div class="book-grid">
+              {#each books as book}
+                <article class="book-card">
+                  <div class="book-top">
+                    <div>
+                      <div class="eyebrow">{book.slug}</div>
+                      <h3 class="book-name">{book.title}</h3>
+                    </div>
+                    <div class="chip">{book.branch_mode}</div>
+                  </div>
+
+                  <div class="chip-row">
+                    <div class="chip">{book.known_remote_chapters} synced chapters</div>
+                    <div class="chip">{book.last_remote_chapter_key ?? "no remote key"}</div>
+                  </div>
+
+                  <div class="book-meta-grid">
+                    <div>
+                      <div class="meta-label">last checked</div>
+                      <div class="meta-value">{formatDate(book.last_checked_at)}</div>
+                    </div>
+                    <div>
+                      <div class="meta-label">latest epub</div>
+                      <div class="meta-value">
+                        {#if book.latestArtifact}
+                          {formatBytes(book.latestArtifact.file_size_bytes)}
+                        {:else}
+                          missing
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="action-row">
+                    <Button variant="outline" disabled={actionBookId === book.book_id} onclick={() => runBookAction(book.book_id, "check")}>
+                      check updates
+                    </Button>
+                    <Button disabled={actionBookId === book.book_id} onclick={() => runBookAction(book.book_id, "build")}>
+                      build epub
+                    </Button>
+                    {#if artifactUrl(book)}
+                      <Button variant="ghost" href={artifactUrl(book)}>download latest</Button>
                     {/if}
-                  </dd>
-                </div>
-              </dl>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          {/if}
+        </Panel>
 
-              <div class="book-actions">
-                <button
-                  class="ghost-button"
-                  on:click={() => runBookAction(book.book_id, "check")}
-                  disabled={actionBookId === book.book_id}
-                >
-                  Check updates
-                </button>
-                <button
-                  class="solid-button"
-                  on:click={() => runBookAction(book.book_id, "build")}
-                  disabled={actionBookId === book.book_id}
-                >
-                  Build EPUB
-                </button>
-                {#if artifactUrl(book)}
-                  <a class="download-link" href={artifactUrl(book)} target="_blank">Download latest</a>
-                {/if}
-              </div>
-            </article>
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    <section class="panel jobs-panel">
-      <div class="panel-heading">
-        <div>
-          <p class="panel-kicker">Jobs</p>
-          <h2>Recent activity</h2>
-        </div>
+        <Panel eyebrow="jobs" title="recent activity">
+          {#if jobs.length === 0}
+            <div class="empty-state">no jobs recorded yet</div>
+          {:else}
+            <div class="job-list">
+              {#each jobs as job}
+                <article class="list-row">
+                  <div>
+                    <div class="eyebrow">{job.type}</div>
+                    <strong>{job.status}</strong>
+                  </div>
+                  <div style="text-align:right;">
+                    <p class="muted">{job.book_id ?? "global job"}</p>
+                    <div class="dim">{formatDate(job.created_at)}</div>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          {/if}
+        </Panel>
       </div>
-
-      {#if jobs.length === 0}
-        <div class="empty-state">No jobs recorded yet.</div>
-      {:else}
-        <div class="job-list">
-          {#each jobs as job}
-            <article class="job-row">
-              <div>
-                <p class="job-type">{job.type}</p>
-                <strong>{job.status}</strong>
-              </div>
-              <div>
-                <p>{job.book_id ?? "global job"}</p>
-                <span>{formatDate(job.created_at)}</span>
-              </div>
-            </article>
-          {/each}
-        </div>
-      {/if}
     </section>
+
+    <div class="domain-mark">hmphin.space inspired layout</div>
   </main>
 </div>
