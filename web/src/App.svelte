@@ -5,6 +5,8 @@
   import InputField from "./lib/components/InputField.svelte";
   import Panel from "./lib/components/Panel.svelte";
   import StarField from "./lib/components/StarField.svelte";
+  import ToastContainer from "./lib/components/ToastContainer.svelte";
+  import { toast } from "./lib/components/toast-store.svelte";
   import Tabs, { type TabItem } from "./lib/components/Tabs.svelte";
   import {
     createTrackedBook,
@@ -36,8 +38,6 @@
   let submitting = $state(false);
   let validating = $state(false);
   let actionBookId = $state<string | null>(null);
-  let errorMessage = $state("");
-  let successMessage = $state("");
 
   let accessToken = $state("");
   let refreshToken = $state("");
@@ -47,7 +47,6 @@
 
   async function loadDashboard() {
     loading = true;
-    errorMessage = "";
     try {
       credential = await getCredential();
       const [trackedBooks, recentJobs] = await Promise.all([listTrackedBooks(), listJobs()]);
@@ -64,7 +63,7 @@
       }));
       jobs = recentJobs.slice(0, 8);
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : "Failed to load dashboard";
+      toast.error(error instanceof Error ? error.message : "failed to load dashboard");
     } finally {
       loading = false;
     }
@@ -72,16 +71,14 @@
 
   async function saveCredential() {
     submitting = true;
-    errorMessage = "";
-    successMessage = "";
     try {
       credential = await putCredential({
         access_token: accessToken.trim() || null,
         refresh_token: refreshToken.trim() || null
       });
-      successMessage = "stored ranobelib credentials";
+      toast.success("stored ranobelib credentials");
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : "Failed to store credentials";
+      toast.error(error instanceof Error ? error.message : "failed to store credentials");
     } finally {
       submitting = false;
     }
@@ -89,13 +86,15 @@
 
   async function runValidation() {
     validating = true;
-    errorMessage = "";
-    successMessage = "";
     try {
       validation = await validateCredential();
-      successMessage = validation.valid ? "credential validated against ranobelib" : "credential check failed";
+      if (validation.valid) {
+        toast.success("credential validated against ranobelib");
+      } else {
+        toast.warning(validation.error ?? "credential check failed");
+      }
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : "Failed to validate credentials";
+      toast.error(error instanceof Error ? error.message : "failed to validate credentials");
     } finally {
       validating = false;
     }
@@ -103,8 +102,6 @@
 
   async function submitBook() {
     submitting = true;
-    errorMessage = "";
-    successMessage = "";
     try {
       await createTrackedBook({
         url: bookUrl.trim(),
@@ -112,10 +109,10 @@
         selected_branch_id: null
       });
       bookUrl = "";
-      successMessage = "tracked title added";
+      toast.success("tracked title added");
       await loadDashboard();
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : "Failed to track title";
+      toast.error(error instanceof Error ? error.message : "failed to track title");
     } finally {
       submitting = false;
     }
@@ -123,19 +120,17 @@
 
   async function runBookAction(bookId: string, action: "check" | "build") {
     actionBookId = bookId;
-    errorMessage = "";
-    successMessage = "";
     try {
       if (action === "check") {
         await triggerCheck(bookId);
-        successMessage = "queued update check";
+        toast.success("queued update check");
       } else {
         await triggerBuild(bookId);
-        successMessage = "queued rebuild";
+        toast.success("queued rebuild");
       }
       await loadDashboard();
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : `Failed to ${action} title`;
+      toast.error(error instanceof Error ? error.message : `failed to ${action} title`);
     } finally {
       actionBookId = null;
     }
@@ -198,18 +193,6 @@
         <div class="metric-label">failed jobs</div>
       </article>
     </section>
-
-    {#if errorMessage}
-      <div style="margin-bottom:1rem;">
-        <Alert variant="error" message={errorMessage} />
-      </div>
-    {/if}
-
-    {#if successMessage}
-      <div style="margin-bottom:1rem;">
-        <Alert variant="success" message={successMessage} />
-      </div>
-    {/if}
 
     <section class="dashboard-grid">
       <div class="main-column">
@@ -352,4 +335,6 @@
       </div>
     </section>
   </main>
+
+  <ToastContainer />
 </div>

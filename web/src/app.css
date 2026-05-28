@@ -346,6 +346,91 @@ a {
   color: var(--text-soft);
 }
 
+.toast-container {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 200;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.5rem;
+  width: 320px;
+  pointer-events: none;
+}
+
+.toast-item {
+  position: relative;
+  overflow: hidden;
+  border-left: 3px solid var(--void-6);
+  background: var(--void-2);
+  box-shadow: 0 0 0 1px var(--void-4), 0 8px 32px -8px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+
+.toast-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toast-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.8rem 0.95rem;
+}
+
+.toast-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toast-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.toast-label {
+  color: var(--text-ghost);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.toast-message {
+  margin: 0;
+  padding-left: 0.8rem;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.toast-progress-shell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--void-4);
+}
+
+.toast-progress {
+  height: 100%;
+  transform-origin: left;
+  background: var(--cosmic);
+  box-shadow: 0 0 8px var(--cosmic-glow);
+  animation: toast-drain linear forwards;
+}
+
 .tabs {
   display: flex;
   gap: 1rem;
@@ -423,6 +508,15 @@ a {
   }
 }
 
+@keyframes toast-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 @media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -446,5 +540,13 @@ a {
   .orbital-ring {
     width: 800px;
     height: 800px;
+  }
+
+  .toast-container {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    padding: 0 0 0 max(0rem, env(safe-area-inset-left));
   }
 }
