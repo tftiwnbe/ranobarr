@@ -12,6 +12,8 @@ __pycache__/
 data/
 server/.coverage
 server/htmlcov/
+web/node_modules/
+web/dist/
 
 # Reference projects gathered for investigation. Keep them out of the new repo.
 /Archive-ranobelib-userscript/

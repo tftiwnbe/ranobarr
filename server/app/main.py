@@ -2,8 +2,10 @@ import uvicorn
 from contextlib import asynccontextmanager
 from typing import Callable
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.artifacts.router import router as artifacts_router
 from app.config import get_settings
@@ -63,6 +65,35 @@ app.include_router(artifacts_router)
 app.include_router(jobs_router)
 app.include_router(source_auth_router)
 app.include_router(tracking_router)
+
+
+frontend_dist_dir = settings.app.frontend_dist_dir
+frontend_assets_dir = frontend_dist_dir / "assets"
+if frontend_assets_dir.is_dir():
+    app.mount("/assets", StaticFiles(directory=frontend_assets_dir), name="frontend-assets")
+
+
+@app.get("/", include_in_schema=False)
+async def serve_frontend_index() -> FileResponse:
+    index_file = frontend_dist_dir / "index.html"
+    if not index_file.is_file():
+        raise HTTPException(status_code=404, detail="Frontend build not found")
+    return FileResponse(index_file)
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_frontend_path(full_path: str) -> FileResponse:
+    if full_path.startswith("api/") or full_path == "health":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    candidate = frontend_dist_dir / full_path
+    if candidate.is_file():
+        return FileResponse(candidate)
+
+    index_file = frontend_dist_dir / "index.html"
+    if not index_file.is_file():
+        raise HTTPException(status_code=404, detail="Frontend build not found")
+    return FileResponse(index_file)
 
 
 if __name__ == "__main__":

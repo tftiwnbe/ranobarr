@@ -27,6 +27,8 @@ class AppConfig(RanobarrBaseSettings):
     artifacts_dir_name: str = "artifacts"
     cache_dir_name: str = "cache"
     temp_dir_name: str = "tmp"
+    frontend_dir: Path = REPO_ROOT / "web"
+    frontend_dist_dir_name: str = "dist"
     build_artifact_retention_per_format: int = 2
     cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:5173"])
     cors_allow_origin_regex: str | None = None
@@ -49,6 +51,10 @@ class AppConfig(RanobarrBaseSettings):
     @property
     def temp_dir(self) -> Path:
         return self.data_dir / self.temp_dir_name
+
+    @property
+    def frontend_dist_dir(self) -> Path:
+        return self.frontend_dir / self.frontend_dist_dir_name
 
 
 class ServerConfig(RanobarrBaseSettings):
