@@ -69,6 +69,7 @@ async def build_book_artifact(
     client: RanobeLibClient,
     *,
     book_id: str,
+    requested_formats: list[str] | None = None,
     event_logger=None,
 ) -> dict[str, Any]:
     book = await session.get(Book, book_id)
@@ -191,6 +192,19 @@ async def build_book_artifact(
             },
         )
 
+    requested_format_set = {
+        value.strip().lower()
+        for value in (requested_formats or ["manifest", "epub"])
+        if value.strip()
+    }
+    supported_formats = {"epub", "manifest"}
+    unsupported_formats = sorted(requested_format_set - supported_formats)
+    if unsupported_formats:
+        raise TrackingError(f"Unsupported build formats: {', '.join(unsupported_formats)}")
+    selected_formats = [value for value in ("manifest", "epub") if value in requested_format_set]
+    if not selected_formats:
+        raise TrackingError("No supported build formats were requested")
+
     manifest = {
         "book": {
             "id": book.id,
@@ -219,44 +233,53 @@ async def build_book_artifact(
         ],
     }
 
-    artifact_relative_path = write_artifact_manifest(book.id, manifest)
-    manifest_artifact = await create_artifact_record(
-        session,
-        book_id=book.id,
-        format_name="manifest",
-        relative_path=artifact_relative_path,
-        chapter_count=len(snapshots),
-    )
+    created_artifacts: list[Artifact] = []
 
-    binary_assets = await ensure_binary_assets_cached(
-        session,
-        collect_asset_urls((chapter.html_content for chapter in normalized_chapters), cover_url=book.cover_url),
-    )
-    if event_logger:
-        await event_logger(
-            level="info",
-            event_type="build.binary_assets_ready",
-            message="Prepared binary assets for EPUB build",
-            payload={"binary_asset_count": len(binary_assets)},
+    if "manifest" in selected_formats:
+        artifact_relative_path = write_artifact_manifest(book.id, manifest)
+        manifest_artifact = await create_artifact_record(
+            session,
+            book_id=book.id,
+            format_name="manifest",
+            relative_path=artifact_relative_path,
+            chapter_count=len(snapshots),
         )
+        created_artifacts.append(manifest_artifact)
 
-    epub_bytes = await build_epub_bytes(
-        identifier=f"ranobarr-{book.id}",
-        title=book.title,
-        author=book.author,
-        summary=book.summary,
-        cover_url=book.cover_url,
-        chapters=normalized_chapters,
-        binary_assets=binary_assets,
-    )
-    epub_relative_path = write_epub_artifact(book.id, epub_bytes)
-    epub_artifact = await create_artifact_record(
-        session,
-        book_id=book.id,
-        format_name="epub",
-        relative_path=epub_relative_path,
-        chapter_count=len(normalized_chapters),
-    )
+    if "epub" in selected_formats:
+        binary_assets = await ensure_binary_assets_cached(
+            session,
+            collect_asset_urls(
+                (chapter.html_content for chapter in normalized_chapters),
+                cover_url=book.cover_url,
+            ),
+        )
+        if event_logger:
+            await event_logger(
+                level="info",
+                event_type="build.binary_assets_ready",
+                message="Prepared binary assets for EPUB build",
+                payload={"binary_asset_count": len(binary_assets)},
+            )
+
+        epub_bytes = await build_epub_bytes(
+            identifier=f"ranobarr-{book.id}",
+            title=book.title,
+            author=book.author,
+            summary=book.summary,
+            cover_url=book.cover_url,
+            chapters=normalized_chapters,
+            binary_assets=binary_assets,
+        )
+        epub_relative_path = write_epub_artifact(book.id, epub_bytes)
+        epub_artifact = await create_artifact_record(
+            session,
+            book_id=book.id,
+            format_name="epub",
+            relative_path=epub_relative_path,
+            chapter_count=len(normalized_chapters),
+        )
+        created_artifacts.append(epub_artifact)
 
     await cleanup_old_artifacts(session, book_id=book.id)
 
@@ -269,34 +292,39 @@ async def build_book_artifact(
         await event_logger(
             level="info",
             event_type="build.artifacts_written",
-            message="Wrote manifest and EPUB artifacts",
+            message="Wrote requested build artifacts",
             payload={
-                "manifest_path": manifest_artifact.relative_path,
-                "epub_path": epub_artifact.relative_path,
+                "requested_formats": selected_formats,
+                "artifacts": [
+                    {"format": artifact.format, "path": artifact.relative_path}
+                    for artifact in created_artifacts
+                ],
             },
         )
 
+    primary_artifact = next(
+        (artifact for artifact in created_artifacts if artifact.format == "epub"),
+        created_artifacts[0],
+    )
     return {
         "book_id": book.id,
-        "artifact_id": epub_artifact.id,
-        "artifact_format": epub_artifact.format,
-        "artifact_path": epub_artifact.relative_path,
+        "artifact_id": primary_artifact.id,
+        "artifact_format": primary_artifact.format,
+        "artifact_path": primary_artifact.relative_path,
         "chapter_count": len(snapshots),
         "fetched_chapter_count": fetched_count,
         "reused_cached_chapter_count": reused_count,
         "artifacts": [
             {
-                "id": manifest_artifact.id,
-                "format": manifest_artifact.format,
-                "path": manifest_artifact.relative_path,
-            },
-            {
-                "id": epub_artifact.id,
-                "format": epub_artifact.format,
-                "path": epub_artifact.relative_path,
-            },
+                "id": artifact.id,
+                "format": artifact.format,
+                "path": artifact.relative_path,
+            }
+            for artifact in created_artifacts
         ],
     }
+
+
 async def create_artifact_record(
     session: AsyncSession,
     *,

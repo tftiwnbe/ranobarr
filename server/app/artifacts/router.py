@@ -23,6 +23,12 @@ def artifact_summary(artifact: Artifact) -> ArtifactSummary:
     )
 
 
+def delete_artifact_file(relative_path: str) -> None:
+    file_path = artifact_file_path(relative_path)
+    if file_path.exists():
+        file_path.unlink()
+
+
 @router.get("", response_model=list[ArtifactSummary])
 async def list_artifacts(
     session: AsyncSession = Depends(get_database_session),
@@ -85,3 +91,39 @@ async def download_artifact(
     filename = file_path.name
     media_type = "application/json" if artifact.format == "manifest" else "application/octet-stream"
     return FileResponse(path=file_path, media_type=media_type, filename=filename)
+
+
+@router.delete("/{artifact_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_artifact(
+    artifact_id: str,
+    session: AsyncSession = Depends(get_database_session),
+) -> None:
+    artifact = await session.get(Artifact, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
+
+    delete_artifact_file(artifact.relative_path)
+    await session.delete(artifact)
+    await session.commit()
+
+
+@router.delete("/books/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_book_artifacts(
+    book_id: str,
+    format: str | None = None,
+    session: AsyncSession = Depends(get_database_session),
+) -> None:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked book not found")
+
+    query = select(Artifact).where(Artifact.book_id == book_id)
+    if format:
+        query = query.where(Artifact.format == format)
+    result = await session.exec(query)
+    artifacts = result.all()
+
+    for artifact in artifacts:
+        delete_artifact_file(artifact.relative_path)
+        await session.delete(artifact)
+    await session.commit()

@@ -9,6 +9,15 @@ class TrackBookRequest(BaseModel):
     selected_branch_id: str | None = None
 
 
+class BuildRequest(BaseModel):
+    formats: list[str] = Field(default_factory=lambda: ["manifest", "epub"])
+
+
+class JobEnqueueResponse(BaseModel):
+    job_id: str
+    status: str
+
+
 class BranchSummary(BaseModel):
     id: str
     name: str

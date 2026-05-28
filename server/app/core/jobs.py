@@ -164,6 +164,7 @@ class JobRuntime:
             elif job.type == "build_artifact":
                 if not job.book_id:
                     raise TrackingError("Build job is missing a book_id")
+                payload = json.loads(job.payload_json or "{}")
                 await log_job_event(
                     session,
                     job_id=job.id,
@@ -175,6 +176,7 @@ class JobRuntime:
                     session,
                     client,
                     book_id=job.book_id,
+                    requested_formats=payload.get("formats"),
                     event_logger=lambda **kwargs: log_job_event(session, job_id=job.id, **kwargs),
                 )
             else:
