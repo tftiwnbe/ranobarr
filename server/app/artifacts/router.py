@@ -6,6 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.builds.storage import artifact_file_path
 from app.core.database import get_database_session
 from app.models import Artifact, Book
+from .service import artifact_download_filename, artifact_media_type, latest_artifact_for_book
 from .schemas import ArtifactSummary
 
 router = APIRouter(prefix="/api/v1/artifacts", tags=["artifacts"])
@@ -64,12 +65,7 @@ async def get_latest_book_artifact(
     if book is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked book not found")
 
-    query = select(Artifact).where(Artifact.book_id == book_id)
-    if format:
-        query = query.where(Artifact.format == format)
-    query = query.order_by(Artifact.created_at.desc(), Artifact.id.desc())
-    result = await session.exec(query)
-    artifact = result.first()
+    artifact = await latest_artifact_for_book(session, book_id=book_id, format_name=format)
     if artifact is None:
         return None
     return artifact_summary(artifact)
@@ -84,13 +80,19 @@ async def download_artifact(
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
 
+    book = await session.get(Book, artifact.book_id)
+    if book is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tracked book not found")
+
     file_path = artifact_file_path(artifact.relative_path)
     if not file_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact file not found")
 
-    filename = file_path.name
-    media_type = "application/json" if artifact.format == "manifest" else "application/octet-stream"
-    return FileResponse(path=file_path, media_type=media_type, filename=filename)
+    return FileResponse(
+        path=file_path,
+        media_type=artifact_media_type(artifact),
+        filename=artifact_download_filename(book, artifact),
+    )
 
 
 @router.delete("/{artifact_id}", status_code=status.HTTP_204_NO_CONTENT)

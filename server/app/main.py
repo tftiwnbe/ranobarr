@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.core.database import run_async_upgrade, sessionmanager
 from app.core.jobs import job_runtime
 from app.jobs.router import router as jobs_router
+from app.opds.router import router as opds_router
 from app.source_auth.router import router as source_auth_router
 from app.system.router import router as system_router
 from app.tracking.router import router as tracking_router
@@ -63,6 +64,7 @@ async def add_security_headers(request: Request, call_next: Callable) -> Respons
 app.include_router(system_router)
 app.include_router(artifacts_router)
 app.include_router(jobs_router)
+app.include_router(opds_router)
 app.include_router(source_auth_router)
 app.include_router(tracking_router)
 
@@ -83,7 +85,7 @@ async def serve_frontend_index() -> FileResponse:
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def serve_frontend_path(full_path: str) -> FileResponse:
-    if full_path.startswith("api/") or full_path == "health":
+    if full_path.startswith("api/") or full_path.startswith("opds") or full_path == "health":
         raise HTTPException(status_code=404, detail="Not found")
 
     candidate = frontend_dist_dir / full_path
