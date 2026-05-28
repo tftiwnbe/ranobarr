@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import TrackingError
 from app.core.jobs import enqueue_job
+from app.core.titles import normalize_book_title
 from app.models import Book, BookState, ChapterSnapshot, JobRecord, TrackRule
 from app.ranobelib import (
     RanobeLibClient,
@@ -185,7 +186,7 @@ async def resolve_remote_book(client: RanobeLibClient, request: TrackBookRequest
     if not novel_info.get("id"):
         raise TrackingError("RanobeLib metadata is unavailable for this title")
 
-    title = (
+    title = normalize_book_title(
         novel_info.get("rus_name")
         or novel_info.get("eng_name")
         or novel_info.get("name")
@@ -307,7 +308,7 @@ async def track_book(
     return TrackBookResponse(
         book_id=book.id,
         slug=resolved.slug,
-        title=resolved.title,
+        title=normalize_book_title(resolved.title),
         author=resolved.author,
         summary=resolved.summary,
         cover_url=resolved.cover_url,
@@ -333,7 +334,7 @@ async def list_tracked_books(session: AsyncSession) -> list[TrackedBookSummary]:
         TrackedBookSummary(
             book_id=book.id,
             slug=book.slug,
-            title=book.title,
+            title=normalize_book_title(book.title),
             available_chapters=book.available_chapters,
             known_remote_chapters=await count_chapter_snapshots(session, book.id),
             branch_mode=rule.branch_mode,
@@ -370,7 +371,7 @@ async def get_tracked_book_detail(session: AsyncSession, book_id: str) -> Tracke
     return TrackedBookDetail(
         book_id=book.id,
         slug=book.slug,
-        title=book.title,
+        title=normalize_book_title(book.title),
         source_url=book.source_url,
         author=book.author,
         summary=book.summary,

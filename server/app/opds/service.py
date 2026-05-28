@@ -11,6 +11,7 @@ from sqlmodel import and_, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.artifacts.service import latest_artifacts_for_books
+from app.core.titles import normalize_book_title
 from app.models import Artifact, Book, BookState
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
@@ -176,7 +177,7 @@ def build_books_feed(
 
 def build_book_detail_feed(request: Request, *, record: OpdsBookRecord) -> bytes:
     detail_href = str(request.url_for("opds_book_feed", book_id=record.book.id))
-    feed = _feed_root(record.book.title, detail_href, record.updated_at)
+    feed = _feed_root(normalize_book_title(record.book.title), detail_href, record.updated_at)
     _feed_link(feed, rel="self", href=detail_href, type_value=_feed_type("acquisition"))
     _feed_link(feed, rel="start", href=str(request.url_for("opds_root")), type_value=_feed_type("navigation"))
     feed.append(build_book_entry(request, record))
@@ -186,7 +187,7 @@ def build_book_detail_feed(request: Request, *, record: OpdsBookRecord) -> bytes
 def build_book_entry(request: Request, record: OpdsBookRecord) -> Element:
     entry = Element(f"{{{ATOM_NS}}}entry")
     SubElement(entry, f"{{{ATOM_NS}}}id").text = f"urn:ranobarr:book:{record.book.id}"
-    SubElement(entry, f"{{{ATOM_NS}}}title").text = record.book.title
+    SubElement(entry, f"{{{ATOM_NS}}}title").text = normalize_book_title(record.book.title)
     SubElement(entry, f"{{{ATOM_NS}}}updated").text = _isoformat(record.updated_at)
 
     author = SubElement(entry, f"{{{ATOM_NS}}}author")

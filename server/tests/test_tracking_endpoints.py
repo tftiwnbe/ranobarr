@@ -1,5 +1,6 @@
 from sqlmodel import select
 
+from app.core.titles import normalize_book_title
 from app.models import Artifact, Book, JobEvent, JobRecord
 from app.tracking.service import (
     branch_id_of,
@@ -62,6 +63,11 @@ def test_normalize_summary_value_from_doc_payload() -> None:
 
     normalized = normalize_summary_value(summary)
     assert normalized == "First line second line Next block"
+
+
+def test_normalize_book_title_strips_novella_suffix() -> None:
+    assert normalize_book_title("Title (Новелла)") == "Title"
+    assert normalize_book_title("Title   (новелла)   ") == "Title"
 
 
 async def test_healthcheck(client) -> None:

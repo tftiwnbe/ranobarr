@@ -22,6 +22,7 @@ from app.builds.storage import (
 )
 from app.config import get_settings
 from app.core.errors import TrackingError
+from app.core.titles import normalize_book_title
 from app.models import Artifact, Book, BookState, ChapterContentCache, ChapterSnapshot, TrackRule
 from app.ranobelib import RanobeLibClient
 
@@ -209,7 +210,7 @@ async def build_book_artifact(
         "book": {
             "id": book.id,
             "slug": book.slug,
-            "title": book.title,
+            "title": normalize_book_title(book.title),
             "author": book.author,
         },
         "generated_at": utcnow().isoformat(),
@@ -264,7 +265,7 @@ async def build_book_artifact(
 
         epub_bytes = await build_epub_bytes(
             identifier=f"ranobarr-{book.id}",
-            title=book.title,
+            title=normalize_book_title(book.title),
             author=book.author,
             summary=book.summary,
             cover_url=book.cover_url,

@@ -8,6 +8,7 @@ from typing import Iterable
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.titles import normalize_book_title
 from app.models import Artifact, Book
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -30,7 +31,10 @@ def sanitize_filename_component(value: str, fallback: str = "book") -> str:
 
 
 def artifact_download_filename(book: Book, artifact: Artifact) -> str:
-    stem = sanitize_filename_component(book.title or book.slug or "book", fallback="book")
+    stem = sanitize_filename_component(
+        normalize_book_title(book.title or book.slug or "book"),
+        fallback="book",
+    )
     suffix = Path(artifact.relative_path).suffix or f".{artifact.format}"
     if artifact.format == "epub":
         if artifact.chapter_count > 0:

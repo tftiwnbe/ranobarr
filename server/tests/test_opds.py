@@ -82,7 +82,7 @@ async def test_opds_books_and_search_only_include_downloadable_titles(client, db
         db,
         temp_data_dir,
         slug="alpha-book",
-        title="Alpha Book",
+        title="Alpha Book (Новелла)",
     )
     db.add(
         Book(
@@ -98,7 +98,7 @@ async def test_opds_books_and_search_only_include_downloadable_titles(client, db
     assert response.status_code == 200
     root = ET.fromstring(response.content)
     titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
-    assert titles == [downloadable.title]
+    assert titles == ["Alpha Book"]
 
     response = await client.get("/opds/search?q=alpha")
     assert response.status_code == 200
