@@ -50,7 +50,8 @@
   // UI state
   let drawerOpen = $state(false);
   let drawerClosing = $state(false);
-  let drawerTab = $state<"track" | "auth" | "jobs">("track");
+  let drawerTab = $state<"track" | "auth" | "jobs" | "book">("track");
+  let drawerBookId = $state<string | null>(null);
   let searchQuery = $state("");
   let sortMode = $state<"title" | "checked" | "chapters">("title");
   let sortAsc = $state(true);
@@ -112,6 +113,10 @@
 
     return result;
   });
+
+  const drawerBook = $derived(
+    drawerBookId ? books.find((book) => book.book_id === drawerBookId) ?? null : null,
+  );
 
   // ─── Data loading ───────────────────���──────────────────
   async function loadDashboard() {
@@ -325,12 +330,20 @@
     drawerClosing = false;
   }
 
+  function openBookDrawer(bookId: string) {
+    drawerBookId = bookId;
+    openDrawer("book");
+  }
+
   function closeDrawer() {
     if (!drawerOpen || drawerClosing) return;
     drawerClosing = true;
     drawerCloseTimer = setTimeout(() => {
       drawerOpen = false;
       drawerClosing = false;
+      if (drawerTab === "book") {
+        drawerBookId = null;
+      }
       drawerCloseTimer = null;
     }, 300);
   }
@@ -553,16 +566,13 @@
                   <div class="book-name">{book.title}</div>
                   <div class="book-author">{book.author ?? "unknown creator"}</div>
                 </div>
-                <div class="book-branch-shell">
-                  <Select
-                    class="book-branch-select"
-                    value={branchSelectValue(book)}
-                    options={branchOptions(book.branches)}
-                    placeholder="default branch"
-                    disabled={actionBookId === book.book_id || book.branches.length === 0}
-                    onValueChange={(value) => void changeBookBranch(book.book_id, value || null)}
-                  />
-                </div>
+                <button
+                  type="button"
+                  class="book-control-trigger"
+                  onclick={() => openBookDrawer(book.book_id)}
+                  aria-label={`Open controls for ${book.title}`}
+                  >manage</button
+                >
               </div>
 
               <div class="book-meta-row">
@@ -583,30 +593,6 @@
                 {/if}
                 <span class="book-dot">·</span>
                 <span class="book-timestamp">checked {formatDate(book.last_checked_at)}</span>
-              </div>
-
-              <div class="book-actions">
-                <button
-                  type="button"
-                  class="btn btn-outline"
-                  disabled={actionBookId === book.book_id}
-                  onclick={() => runBookAction(book.book_id)}
-                  >check</button
-                >
-                {#if artifactUrl(book)}
-                  <a
-                    href={artifactUrl(book)}
-                    class="btn btn-ghost"
-                    aria-disabled={false}>↓ epub</a
-                  >
-                {/if}
-                <button
-                  type="button"
-                  class="btn btn-danger"
-                  disabled={actionBookId === book.book_id}
-                  onclick={() => void removeBook(book)}
-                  >delete</button
-                >
               </div>
             </div>
           </article>
@@ -637,7 +623,9 @@
           <span class="drawer-title">
             {#if drawerTab === "track"}add title
             {:else if drawerTab === "auth"}ranobelib auth
-            {:else}recent jobs{/if}
+            {:else if drawerTab === "jobs"}recent jobs
+            {:else if drawerBook}{drawerBook.title}
+            {:else}title controls{/if}
           </span>
           <button type="button" class="drawer-close" onclick={closeDrawer}>✕</button>
         </div>
@@ -799,7 +787,7 @@
               </div>
 
               <!-- Jobs tab -->
-            {:else}
+            {:else if drawerTab === "jobs"}
               <div class="drawer-body">
                 {#if jobs.length === 0}
                   <div
@@ -825,6 +813,87 @@
                     </div>
                   {/each}
                 {/if}
+              </div>
+            {:else if drawerBook}
+              <div class="drawer-body">
+                <div class="preview-card">
+                  <div class="preview-cover-shell">
+                    {#if coverUrl(drawerBook)}
+                      <img
+                        class="preview-cover"
+                        src={coverUrl(drawerBook) ?? undefined}
+                        alt={`Cover for ${drawerBook.title}`}
+                      />
+                    {:else}
+                      <div class="preview-cover preview-cover--empty">
+                        <span>{drawerBook.title.slice(0, 1)}</span>
+                      </div>
+                    {/if}
+                  </div>
+                  <div class="preview-copy">
+                    <div class="preview-title">{drawerBook.title}</div>
+                    <div class="preview-author">{drawerBook.author ?? "unknown creator"}</div>
+                    <div class="preview-meta">{drawerBook.known_remote_chapters} chapters tracked</div>
+                  </div>
+                </div>
+
+                <div class="status-row status-row--book">
+                  <div class="status-cell">
+                    <div class="status-cell-label">branch</div>
+                    <div class="status-cell-value">
+                      {drawerBook.selected_branch_label ?? "default branch"}
+                    </div>
+                  </div>
+                  <div class="status-cell">
+                    <div class="status-cell-label">epub</div>
+                    <div class="status-cell-value">
+                      {#if drawerBook.latestArtifact}
+                        {formatBytes(drawerBook.latestArtifact.file_size_bytes)}
+                      {:else if bookSyncLabel(drawerBook.book_id)}
+                        {bookSyncLabel(drawerBook.book_id)}
+                      {:else}
+                        no epub
+                      {/if}
+                    </div>
+                  </div>
+                  <div class="status-cell">
+                    <div class="status-cell-label">checked</div>
+                    <div class="status-cell-value">{formatDate(drawerBook.last_checked_at)}</div>
+                  </div>
+                </div>
+
+                <div class="form-field">
+                  <label for="book-branch-select" class="form-label">branch</label>
+                  <Select
+                    id="book-branch-select"
+                    class="form-select"
+                    value={branchSelectValue(drawerBook)}
+                    options={branchOptions(drawerBook.branches)}
+                    placeholder="default branch"
+                    disabled={actionBookId === drawerBook.book_id || drawerBook.branches.length === 0}
+                    onValueChange={(value) => void changeBookBranch(drawerBook.book_id, value || null)}
+                  />
+                </div>
+
+                <div class="book-drawer-actions">
+                  <button
+                    type="button"
+                    class="btn btn-outline"
+                    disabled={actionBookId === drawerBook.book_id}
+                    onclick={() => void runBookAction(drawerBook.book_id)}
+                    >check now</button
+                  >
+                  {#if artifactUrl(drawerBook)}
+                    <a href={artifactUrl(drawerBook)} class="btn btn-ghost">download epub</a>
+                  {/if}
+                  <button
+                    type="button"
+                    class="btn btn-danger"
+                    disabled={actionBookId === drawerBook.book_id}
+                    onclick={() => void removeBook(drawerBook)}
+                    >delete title</button
+                  >
+                </div>
               </div>
             {/if}
           </div>
