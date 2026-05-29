@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { DotsThreeOutlineVerticalIcon } from "phosphor-svelte";
   import Select from "./lib/components/Select.svelte";
   import type { SelectOption } from "./lib/components/Select.types";
   import StarField from "./lib/components/StarField.svelte";
@@ -566,33 +567,39 @@
                   <div class="book-name">{book.title}</div>
                   <div class="book-author">{book.author ?? "unknown creator"}</div>
                 </div>
+              </div>
+
+              <div class="book-meta-row">
+                <div class="book-meta-stats">
+                  <span class="book-chip">{book.known_remote_chapters} ch</span>
+                  {#if book.last_remote_chapter_key}
+                    <span class="book-chip">{book.last_remote_chapter_key}</span>
+                  {/if}
+                  {#if book.latestArtifact}
+                    <span class="book-chip"
+                      >{formatBytes(book.latestArtifact.file_size_bytes)}</span
+                    >
+                  {:else if bookSyncLabel(book.book_id)}
+                    <span class="book-chip book-chip--live">{bookSyncLabel(book.book_id)}</span>
+                  {:else}
+                    <span class="book-chip" style="color:var(--text-ghost);"
+                      >no epub</span
+                    >
+                  {/if}
+                  <span class="book-dot">·</span>
+                  <span class="book-timestamp">checked {formatDate(book.last_checked_at)}</span>
+                </div>
                 <button
                   type="button"
                   class="book-control-trigger"
                   onclick={() => openBookDrawer(book.book_id)}
                   aria-label={`Open controls for ${book.title}`}
-                  >manage</button
                 >
-              </div>
-
-              <div class="book-meta-row">
-                <span class="book-chip">{book.known_remote_chapters} ch</span>
-                {#if book.last_remote_chapter_key}
-                  <span class="book-chip">{book.last_remote_chapter_key}</span>
-                {/if}
-                {#if book.latestArtifact}
-                  <span class="book-chip"
-                    >{formatBytes(book.latestArtifact.file_size_bytes)}</span
-                  >
-                {:else if bookSyncLabel(book.book_id)}
-                  <span class="book-chip book-chip--live">{bookSyncLabel(book.book_id)}</span>
-                {:else}
-                  <span class="book-chip" style="color:var(--text-ghost);"
-                    >no epub</span
-                  >
-                {/if}
-                <span class="book-dot">·</span>
-                <span class="book-timestamp">checked {formatDate(book.last_checked_at)}</span>
+                  <span class="book-control-label">manage</span>
+                  <span class="book-control-icon" aria-hidden="true">
+                    <DotsThreeOutlineVerticalIcon size={16} weight="bold" />
+                  </span>
+                </button>
               </div>
             </div>
           </article>

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>ranobarr</title>
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#a5b4fc" stop-opacity="0.18"/>
+      <stop offset="60%" stop-color="#a5b4fc" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#a5b4fc" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="#050507"/>
+  <circle cx="256" cy="256" r="220" fill="url(#halo)"/>
+  <g fill="none" stroke="#c7d2fe" stroke-opacity="0.9" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M132 372 L132 144"/>
+    <path d="M132 144 L278 144"/>
+    <path d="M278 144 L356 204"/>
+    <path d="M356 204 L278 264"/>
+    <path d="M132 264 L278 264"/>
+    <path d="M132 264 L360 372"/>
+    <path d="M212 144 L212 372"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="132" cy="144" r="6"/>
+    <circle cx="278" cy="144" r="6"/>
+    <circle cx="356" cy="204" r="6"/>
+    <circle cx="278" cy="264" r="6"/>
+    <circle cx="360" cy="372" r="5"/>
+  </g>
+  <g fill="#ffffff" fill-opacity="0.85">
+    <circle cx="160" cy="118" r="1.5"/>
+    <circle cx="360" cy="132" r="1.2"/>
+    <circle cx="420" cy="240" r="1.4"/>
+    <circle cx="100" cy="270" r="1.2"/>
+    <circle cx="300" cy="402" r="1.3"/>
+    <circle cx="204" cy="420" r="1.1"/>
+  </g>
+</svg>

@@ -467,8 +467,17 @@ h4 {
 .book-meta-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.book-meta-stats {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .book-chip {
@@ -501,7 +510,7 @@ h4 {
 .book-control-trigger {
   flex-shrink: 0;
   min-width: 5.5rem;
-  height: 30px;
+  height: 28px;
   padding: 0 0.75rem;
   border: 1px solid var(--line);
   background: rgba(16, 16, 20, 0.74);
@@ -514,12 +523,26 @@ h4 {
     border-color 140ms ease,
     color 140ms ease,
     background 140ms ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
 }
 
 .book-control-trigger:hover {
   border-color: var(--void-6);
   color: var(--text);
   background: var(--void-3);
+}
+
+.book-control-label {
+  display: inline-flex;
+}
+
+.book-control-icon {
+  display: none;
+  align-items: center;
+  justify-content: center;
 }
 
 .book-meta-inline {
@@ -1260,8 +1283,10 @@ h4 {
   }
 
   .book-control-trigger {
-    min-width: 0;
-    width: 100%;
+    width: 28px;
+    min-width: 28px;
+    padding: 0;
+    align-self: flex-start;
   }
 
   .book-name {
@@ -1270,6 +1295,11 @@ h4 {
   }
 
   .book-meta-row {
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .book-meta-stats {
     gap: 0.35rem;
   }
 
@@ -1283,6 +1313,14 @@ h4 {
 
   .book-timestamp {
     width: 100%;
+  }
+
+  .book-control-label {
+    display: none;
+  }
+
+  .book-control-icon {
+    display: inline-flex;
   }
 
   .preview-card {
