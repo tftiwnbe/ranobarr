@@ -627,13 +627,19 @@
         <div class="drawer-handle"><div class="drawer-handle-bar"></div></div>
 
         <div class="drawer-header">
-          <span class="drawer-title">
-            {#if drawerTab === "track"}add title
-            {:else if drawerTab === "auth"}ranobelib auth
-            {:else if drawerTab === "jobs"}recent jobs
-            {:else if drawerBook}{drawerBook.title}
-            {:else}title controls{/if}
-          </span>
+          {#if drawerBook}
+            <div class="drawer-title-block">
+              <div class="drawer-title">{drawerBook.title}</div>
+              <div class="drawer-subtitle">{drawerBook.author ?? "unknown creator"}</div>
+            </div>
+          {:else}
+            <span class="drawer-title">
+              {#if drawerTab === "track"}add title
+              {:else if drawerTab === "auth"}ranobelib auth
+              {:else if drawerTab === "jobs"}recent jobs
+              {:else}title controls{/if}
+            </span>
+          {/if}
           <button type="button" class="drawer-close" onclick={closeDrawer}>✕</button>
         </div>
 
@@ -823,10 +829,6 @@
               </div>
             {:else if drawerBook}
               <div class="drawer-body">
-                <div class="book-drawer-summary">
-                  <div class="book-drawer-author">{drawerBook.author ?? "unknown creator"}</div>
-                </div>
-
                 <div class="form-field">
                   <label for="book-branch-select" class="form-label">branch</label>
                   <Select
@@ -856,7 +858,7 @@
                     class="btn btn-danger"
                     disabled={actionBookId === drawerBook.book_id}
                     onclick={() => void removeBook(drawerBook)}
-                    >delete title</button
+                    >delete</button
                   >
                 </div>
               </div>

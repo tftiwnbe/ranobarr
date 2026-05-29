@@ -731,10 +731,17 @@ h4 {
 
 .drawer-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 0.75rem 1rem 0.75rem;
   border-bottom: 1px solid var(--line);
+  gap: 0.75rem;
+}
+
+.drawer-title-block {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
 }
 
 .drawer-title {
@@ -742,6 +749,17 @@ h4 {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text);
+}
+
+.drawer-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-soft);
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 .drawer-close {
@@ -773,25 +791,40 @@ h4 {
   transform-origin: top center;
 }
 
-.book-drawer-summary {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.book-drawer-author {
-  font-size: 11px;
-  color: var(--text-soft);
-  letter-spacing: 0.02em;
-}
-
 .book-drawer-actions {
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
+  flex-wrap: nowrap;
 }
 
-.book-drawer-actions .btn {
-  width: 100%;
-  height: 38px;
+.book-drawer-actions .btn,
+.book-drawer-actions a.btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 34px;
+  padding: 0 0.7rem;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.book-drawer-actions .btn-danger {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
+}
+
+@media (max-width: 600px) {
+  .book-drawer-actions {
+    gap: 0.4rem;
+  }
+
+  .book-drawer-actions .btn,
+  .book-drawer-actions a.btn {
+    height: 32px;
+    padding: 0 0.55rem;
+    font-size: 9px;
+  }
 }
 
 .preview-card {
