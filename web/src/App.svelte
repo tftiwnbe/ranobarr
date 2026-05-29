@@ -816,50 +816,9 @@
               </div>
             {:else if drawerBook}
               <div class="drawer-body">
-                <div class="preview-card">
-                  <div class="preview-cover-shell">
-                    {#if coverUrl(drawerBook)}
-                      <img
-                        class="preview-cover"
-                        src={coverUrl(drawerBook) ?? undefined}
-                        alt={`Cover for ${drawerBook.title}`}
-                      />
-                    {:else}
-                      <div class="preview-cover preview-cover--empty">
-                        <span>{drawerBook.title.slice(0, 1)}</span>
-                      </div>
-                    {/if}
-                  </div>
-                  <div class="preview-copy">
-                    <div class="preview-title">{drawerBook.title}</div>
-                    <div class="preview-author">{drawerBook.author ?? "unknown creator"}</div>
-                    <div class="preview-meta">{drawerBook.known_remote_chapters} chapters tracked</div>
-                  </div>
-                </div>
-
-                <div class="status-row status-row--book">
-                  <div class="status-cell">
-                    <div class="status-cell-label">branch</div>
-                    <div class="status-cell-value">
-                      {drawerBook.selected_branch_label ?? "default branch"}
-                    </div>
-                  </div>
-                  <div class="status-cell">
-                    <div class="status-cell-label">epub</div>
-                    <div class="status-cell-value">
-                      {#if drawerBook.latestArtifact}
-                        {formatBytes(drawerBook.latestArtifact.file_size_bytes)}
-                      {:else if bookSyncLabel(drawerBook.book_id)}
-                        {bookSyncLabel(drawerBook.book_id)}
-                      {:else}
-                        no epub
-                      {/if}
-                    </div>
-                  </div>
-                  <div class="status-cell">
-                    <div class="status-cell-label">checked</div>
-                    <div class="status-cell-value">{formatDate(drawerBook.last_checked_at)}</div>
-                  </div>
+                <div class="book-drawer-summary">
+                  <div class="book-drawer-name">{drawerBook.title}</div>
+                  <div class="book-drawer-author">{drawerBook.author ?? "unknown creator"}</div>
                 </div>
 
                 <div class="form-field">

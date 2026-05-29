@@ -750,6 +750,23 @@ h4 {
   transform-origin: top center;
 }
 
+.book-drawer-summary {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.book-drawer-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.book-drawer-author {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
 .book-drawer-actions {
   display: grid;
   gap: 0.5rem;
