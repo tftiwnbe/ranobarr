@@ -824,7 +824,6 @@
             {:else if drawerBook}
               <div class="drawer-body">
                 <div class="book-drawer-summary">
-                  <div class="book-drawer-name">{drawerBook.title}</div>
                   <div class="book-drawer-author">{drawerBook.author ?? "unknown creator"}</div>
                 </div>
 

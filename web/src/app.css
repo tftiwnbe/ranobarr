@@ -775,19 +775,13 @@ h4 {
 
 .book-drawer-summary {
   display: grid;
-  gap: 0.3rem;
-}
-
-.book-drawer-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.45;
+  gap: 0.15rem;
 }
 
 .book-drawer-author {
   font-size: 11px;
   color: var(--text-soft);
+  letter-spacing: 0.02em;
 }
 
 .book-drawer-actions {
