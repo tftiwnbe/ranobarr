@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from app.models import Artifact, BinaryAssetCache, Book, BookState
+from app.models import Artifact, BinaryAssetCache, Book, BookState, CollectionBook, UserCollection
 
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 
@@ -29,6 +29,8 @@ async def create_downloadable_book(
         cover_url=cover_url,
         genres_json=json.dumps(genres or [], ensure_ascii=False),
         tags_json=json.dumps(tags or [], ensure_ascii=False),
+        opds_visible_genres_json=json.dumps(genres or [], ensure_ascii=False),
+        opds_visible_tags_json=json.dumps(tags or [], ensure_ascii=False),
         available_chapters=chapter_count,
     )
     db.add(book)
@@ -75,7 +77,7 @@ async def test_opds_root_exposes_navigation_sections(client, db, temp_data_dir) 
     assert root.findtext("atom:title", namespaces=ATOM_NS) == "Ranobarr Catalog"
 
     titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
-    assert titles == ["All Books", "Recently Updated", "Genres", "Tags"]
+    assert titles == ["All Books", "Recently Updated", "Current", "Favorites", "Collections", "Genres", "Tags"]
 
     links = {link.attrib["rel"]: link.attrib["href"] for link in root.findall("atom:link", ATOM_NS)}
     assert links["self"].endswith("/opds")
@@ -210,3 +212,63 @@ async def test_opds_group_feeds_expose_genres_and_tags(client, db, temp_data_dir
     root = ET.fromstring(response.content)
     tag_titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
     assert tag_titles == ["Academy"]
+
+
+async def test_opds_current_favorites_and_collections_use_filtered_library_state(client, db, temp_data_dir) -> None:
+    favorite_book, _ = await create_downloadable_book(
+        db,
+        temp_data_dir,
+        slug="favorite-book",
+        title="Favorite Book",
+        genres=[{"name": "Боевик", "slug": "old-cyrillic"}],
+        tags=[{"name": "Magic", "slug": "magic"}],
+    )
+    favorite_book.is_favorite = True
+    favorite_book.is_current = True
+    favorite_book.opds_visible_tags_json = json.dumps([], ensure_ascii=False)
+    db.add(favorite_book)
+
+    hidden_book, _ = await create_downloadable_book(
+        db,
+        temp_data_dir,
+        slug="hidden-book",
+        title="Hidden Book",
+        genres=[{"name": "Fantasy", "slug": "fantasy"}],
+    )
+    collection = UserCollection(slug="featured", name="Featured")
+    db.add(collection)
+    await db.commit()
+    await db.refresh(collection)
+    db.add(CollectionBook(collection_id=collection.id, book_id=favorite_book.id))
+    await db.commit()
+
+    response = await client.get("/opds/current")
+    assert response.status_code == 200
+    root = ET.fromstring(response.content)
+    titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
+    assert titles == ["Favorite Book"]
+
+    response = await client.get("/opds/favorites")
+    assert response.status_code == 200
+    root = ET.fromstring(response.content)
+    titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
+    assert titles == ["Favorite Book"]
+
+    response = await client.get("/opds/collections")
+    assert response.status_code == 200
+    root = ET.fromstring(response.content)
+    titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
+    assert titles == ["Featured"]
+
+    response = await client.get(f"/opds/collections/{collection.id}")
+    assert response.status_code == 200
+    root = ET.fromstring(response.content)
+    titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
+    assert titles == ["Favorite Book"]
+
+    detail = ET.fromstring((await client.get(f"/opds/books/{favorite_book.id}")).content)
+    entry = detail.find("atom:entry", ATOM_NS)
+    assert entry is not None
+    category_terms = [node.attrib.get("term") for node in entry.findall("atom:category", ATOM_NS)]
+    assert any(term and term.startswith("genre:item-") for term in category_terms)
+    assert not any(term == "tag:magic" for term in category_terms)

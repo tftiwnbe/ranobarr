@@ -1,9 +1,12 @@
 import uvicorn
 from contextlib import asynccontextmanager
+import logging
+import time
 from typing import Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -11,7 +14,10 @@ from app.artifacts.router import router as artifacts_router
 from app.config import get_settings
 from app.core.database import run_async_upgrade, sessionmanager
 from app.core.jobs import job_runtime
+from app.core.logging import configure_logging
+from app.core.security import ensure_request_authorized, is_auth_enabled
 from app.jobs.router import router as jobs_router
+from app.library.router import router as library_router
 from app.opds.router import router as opds_router
 from app.source_auth.router import router as source_auth_router
 from app.system.router import router as system_router
@@ -25,7 +31,9 @@ async def lifespan(_app: FastAPI):
     settings.app.artifacts_dir.mkdir(parents=True, exist_ok=True)
     settings.app.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.app.temp_dir.mkdir(parents=True, exist_ok=True)
+    settings.app.logs_dir.mkdir(parents=True, exist_ok=True)
 
+    configure_logging()
     await run_async_upgrade()
     await job_runtime.start()
     yield
@@ -35,6 +43,7 @@ async def lifespan(_app: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app.project_name, lifespan=lifespan)
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,15 +64,32 @@ _SECURITY_HEADERS = {
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next: Callable) -> Response:
-    response = await call_next(request)
+    started = time.perf_counter()
+    try:
+        if request.url.path != "/health":
+            ensure_request_authorized(request)
+        response = await call_next(request)
+    except HTTPException as exc:
+        response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers or {})
     for header, value in _SECURITY_HEADERS.items():
         response.headers[header] = value
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info(
+        "%s %s -> %s %.1fms",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    if is_auth_enabled():
+        response.headers["Cache-Control"] = "private, no-store"
     return response
 
 
 app.include_router(system_router)
 app.include_router(artifacts_router)
 app.include_router(jobs_router)
+app.include_router(library_router)
 app.include_router(opds_router)
 app.include_router(source_auth_router)
 app.include_router(tracking_router)

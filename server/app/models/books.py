@@ -22,7 +22,13 @@ class Book(SQLModel, table=True):
     status: str | None = None
     genres_json: str | None = None
     tags_json: str | None = None
+    opds_visible_genres_json: str | None = None
+    opds_visible_tags_json: str | None = None
     branches_json: str | None = None
+    is_favorite: bool = False
+    is_current: bool = False
+    rating: int | None = None
+    comment: str | None = None
     available_chapters: int = 0
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -49,3 +55,20 @@ class BookState(SQLModel, table=True):
     last_error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class UserCollection(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    slug: str = Field(index=True, unique=True)
+    name: str
+    description: str | None = None
+    sort_order: int = 0
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class CollectionBook(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    collection_id: str = Field(foreign_key="usercollection.id", index=True)
+    book_id: str = Field(foreign_key="book.id", index=True)
+    created_at: datetime = Field(default_factory=utcnow)

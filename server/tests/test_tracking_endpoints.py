@@ -1,7 +1,18 @@
 from sqlmodel import select
 
 from app.core.titles import normalize_book_title
-from app.models import Artifact, Book, BookState, ChapterContentCache, ChapterSnapshot, JobEvent, JobRecord, TrackRule
+from app.models import (
+    Artifact,
+    Book,
+    BookState,
+    ChapterContentCache,
+    ChapterSnapshot,
+    CollectionBook,
+    JobEvent,
+    JobRecord,
+    TrackRule,
+    UserCollection,
+)
 from app.tracking.service import (
     branch_id_of,
     chapter_key,
@@ -455,9 +466,13 @@ async def test_delete_tracked_book_removes_related_rows_and_files(client, db, te
             file_size_bytes=4,
         )
     )
+    collection = UserCollection(slug="cleanup", name="Cleanup")
+    db.add(collection)
     job = JobRecord(type="check_updates", status="completed", book_id=book.id)
     db.add(job)
     await db.commit()
+    await db.refresh(collection)
+    db.add(CollectionBook(collection_id=collection.id, book_id=book.id))
     await db.refresh(job)
     db.add(JobEvent(job_id=job.id, level="info", event_type="job.completed", message="done"))
     await db.commit()
@@ -473,5 +488,124 @@ async def test_delete_tracked_book_removes_related_rows_and_files(client, db, te
     assert (await db.exec(select(Artifact).where(Artifact.book_id == book.id))).first() is None
     assert (await db.exec(select(JobRecord).where(JobRecord.book_id == book.id))).first() is None
     assert (await db.exec(select(JobEvent).where(JobEvent.job_id == job.id))).first() is None
+    assert (await db.exec(select(CollectionBook).where(CollectionBook.book_id == book.id))).first() is None
     assert not artifact_path.exists()
     assert not cache_path.exists()
+
+
+async def test_tracked_books_support_updated_sort(client, db) -> None:
+    first = Book(
+        slug="first-sort-book",
+        source_url="https://ranobelib.me/ru/book/first-sort-book",
+        title="First Sort Book",
+        available_chapters=1,
+    )
+    second = Book(
+        slug="second-sort-book",
+        source_url="https://ranobelib.me/ru/book/second-sort-book",
+        title="Second Sort Book",
+        available_chapters=1,
+    )
+    db.add(first)
+    db.add(second)
+    await db.commit()
+    await db.refresh(first)
+    await db.refresh(second)
+
+    db.add(TrackRule(book_id=first.id))
+    db.add(TrackRule(book_id=second.id))
+    db.add(BookState(book_id=first.id, last_remote_chapter_key="v1_ch1"))
+    db.add(BookState(book_id=second.id, last_remote_chapter_key="v1_ch1"))
+    await db.commit()
+
+    second.title = "A Second Sort Book"
+    await db.commit()
+
+    response = await client.get("/api/v1/tracking/books?sort=title")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["title"] == "A Second Sort Book"
+
+
+async def test_book_preferences_update_can_set_current_rating_comment_and_visible_metadata(client, db) -> None:
+    book = Book(
+        slug="prefs-book",
+        source_url="https://ranobelib.me/ru/book/prefs-book",
+        title="Prefs Book",
+        genres_json='[{"name":"Fantasy","slug":"fantasy"},{"name":"Drama","slug":"drama"}]',
+        tags_json='[{"name":"Academy","slug":"academy"},{"name":"Magic","slug":"magic"}]',
+        available_chapters=2,
+    )
+    other_current = Book(
+        slug="other-current-book",
+        source_url="https://ranobelib.me/ru/book/other-current-book",
+        title="Other Current",
+        is_current=True,
+        available_chapters=1,
+    )
+    collection = UserCollection(slug="favorites", name="Favorites")
+    db.add(book)
+    db.add(other_current)
+    db.add(collection)
+    await db.commit()
+    await db.refresh(book)
+    await db.refresh(other_current)
+    await db.refresh(collection)
+
+    db.add(TrackRule(book_id=book.id))
+    db.add(TrackRule(book_id=other_current.id))
+    db.add(BookState(book_id=book.id, last_remote_chapter_key="v1_ch2"))
+    db.add(BookState(book_id=other_current.id, last_remote_chapter_key="v1_ch1"))
+    await db.commit()
+
+    response = await client.patch(
+        f"/api/v1/tracking/books/{book.id}/preferences",
+        json={
+            "opds_visible_genre_slugs": ["fantasy"],
+            "opds_visible_tag_slugs": ["academy"],
+            "is_favorite": True,
+            "is_current": True,
+            "rating": 5,
+            "comment": "strong title",
+            "collection_ids": [collection.id],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["slug"] for item in payload["opds_visible_genres"]] == ["fantasy"]
+    assert [item["slug"] for item in payload["opds_visible_tags"]] == ["academy"]
+    assert payload["is_favorite"] is True
+    assert payload["is_current"] is True
+    assert payload["rating"] == 5
+    assert payload["comment"] == "strong title"
+    assert payload["collections"][0]["id"] == collection.id
+
+    await db.refresh(other_current)
+    assert other_current.is_current is False
+    membership = (await db.exec(select(CollectionBook).where(CollectionBook.book_id == book.id))).all()
+    assert len(membership) == 1
+
+
+async def test_library_collection_crud(client) -> None:
+    response = await client.post(
+        "/api/v1/library/collections",
+        json={"name": "Weekend Reads", "description": "Fast picks", "sort_order": 3},
+    )
+    assert response.status_code == 201
+    collection = response.json()
+    assert collection["name"] == "Weekend Reads"
+    assert collection["book_count"] == 0
+
+    response = await client.get("/api/v1/library/collections")
+    assert response.status_code == 200
+    assert response.json()[0]["name"] == "Weekend Reads"
+
+    response = await client.patch(
+        f"/api/v1/library/collections/{collection['id']}",
+        json={"description": "Updated", "sort_order": 1},
+    )
+    assert response.status_code == 200
+    assert response.json()["description"] == "Updated"
+
+    response = await client.delete(f"/api/v1/library/collections/{collection['id']}")
+    assert response.status_code == 204

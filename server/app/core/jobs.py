@@ -4,13 +4,14 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from sqlalchemy import exists
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.builds.service import build_book_artifact
 from app.core.database import sessionmanager
 from app.core.errors import TrackingError
-from app.models import JobRecord
+from app.models import Artifact, Book, ChapterSnapshot, JobRecord, TrackRule
 from app.jobs.service import log_job_event
 from app.source_auth.service import make_ranobelib_client
 
@@ -150,9 +151,40 @@ class JobRuntime:
 
     async def run_pending_jobs(self) -> None:
         async with sessionmanager.session() as session:
+            await self._enqueue_missing_epub_builds(session)
             jobs = await self.pending_jobs(session)
             for job in jobs:
                 await self._run_single_job(session, job)
+
+    async def _enqueue_missing_epub_builds(self, session: AsyncSession) -> None:
+        epub_exists = exists(
+            select(Artifact.id).where(
+                Artifact.book_id == Book.id,
+                Artifact.format == "epub",
+            )
+        )
+        snapshot_exists = exists(select(ChapterSnapshot.id).where(ChapterSnapshot.book_id == Book.id))
+
+        result = await session.exec(
+            select(Book.id, Book.slug, TrackRule.branch_mode, TrackRule.selected_branch_id)
+            .join(TrackRule, TrackRule.book_id == Book.id)
+            .where(~epub_exists, snapshot_exists)
+            .order_by(Book.created_at.asc(), Book.id.asc())
+        )
+        for book_id, slug, branch_mode, selected_branch_id in result.all():
+            if await has_active_job(session, job_type="build_artifact", book_id=book_id):
+                continue
+            await enqueue_job(
+                session,
+                job_type="build_artifact",
+                book_id=book_id,
+                payload={
+                    "slug": slug,
+                    "branch_mode": branch_mode,
+                    "selected_branch_id": selected_branch_id,
+                    "formats": ["manifest", "epub"],
+                },
+            )
 
     async def _run_single_job(self, session: AsyncSession, job: JobRecord) -> None:
         from app.tracking.service import process_check_updates_job

@@ -27,6 +27,7 @@ class AppConfig(RanobarrBaseSettings):
     artifacts_dir_name: str = "artifacts"
     cache_dir_name: str = "cache"
     temp_dir_name: str = "tmp"
+    logs_dir_name: str = "logs"
     frontend_dir: Path = REPO_ROOT / "web"
     frontend_dist_dir_name: str = "dist"
     build_artifact_retention_per_format: int = 2
@@ -53,6 +54,10 @@ class AppConfig(RanobarrBaseSettings):
         return self.data_dir / self.temp_dir_name
 
     @property
+    def logs_dir(self) -> Path:
+        return self.data_dir / self.logs_dir_name
+
+    @property
     def frontend_dist_dir(self) -> Path:
         return self.frontend_dir / self.frontend_dist_dir_name
 
@@ -66,10 +71,17 @@ class SchedulerConfig(RanobarrBaseSettings):
     scan_interval_seconds: int = 900
 
 
+class AuthConfig(RanobarrBaseSettings):
+    enabled: bool = False
+    username: str = "ranobarr"
+    password: str = "change-me"
+
+
 class Settings(RanobarrBaseSettings):
     app: AppConfig = Field(default_factory=AppConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
 
 @lru_cache(maxsize=1)

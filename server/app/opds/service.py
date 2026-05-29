@@ -13,7 +13,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.artifacts.service import latest_artifacts_for_books
 from app.core.titles import normalize_book_title
-from app.models import Artifact, Book, BookState
+from app.models import Artifact, Book, BookState, CollectionBook, UserCollection
 from app.tracking.schemas import NamedTagSummary
 from app.tracking.service import deserialize_named_items
 
@@ -104,31 +104,53 @@ def build_root_feed(request: Request, *, downloadable_count: int, latest_updated
             "All Books",
             str(request.url_for("opds_books_feed")),
             "Browse all downloadable EPUB books.",
+            "acquisition",
         ),
         (
             "Recently Updated",
             f"{request.url_for('opds_books_feed')}?sort=updated",
             "Newest generated books first.",
+            "acquisition",
+        ),
+        (
+            "Current",
+            str(request.url_for("opds_current_books_feed")),
+            "Your current reading focus.",
+            "acquisition",
+        ),
+        (
+            "Favorites",
+            str(request.url_for("opds_favorite_books_feed")),
+            "Pinned favorite titles.",
+            "acquisition",
+        ),
+        (
+            "Collections",
+            str(request.url_for("opds_collection_groups_feed")),
+            "Browse user-defined collections.",
+            "navigation",
         ),
         (
             "Genres",
             str(request.url_for("opds_genre_groups_feed")),
             "Browse books grouped by genre.",
+            "navigation",
         ),
         (
             "Tags",
             str(request.url_for("opds_tag_groups_feed")),
             "Browse books grouped by tag.",
+            "navigation",
         ),
     ]
 
-    for title, href, summary in sections:
+    for title, href, summary, kind in sections:
         entry = SubElement(feed, f"{{{ATOM_NS}}}entry")
         SubElement(entry, f"{{{ATOM_NS}}}id").text = href
         SubElement(entry, f"{{{ATOM_NS}}}title").text = title
         SubElement(entry, f"{{{ATOM_NS}}}updated").text = _isoformat(updated_at)
         SubElement(entry, f"{{{ATOM_NS}}}content", {"type": "text"}).text = summary
-        _entry_link(entry, rel="subsection", href=href, type_value=_feed_type("acquisition"))
+        _entry_link(entry, rel="subsection", href=href, type_value=_feed_type(kind))
 
     SubElement(feed, f"{{{OPDS_NS}}}totalResults").text = str(downloadable_count)
     return tostring(feed, encoding="utf-8", xml_declaration=True)
@@ -216,13 +238,13 @@ def build_book_entry(request: Request, record: OpdsBookRecord) -> Element:
             f"{{{ATOM_NS}}}category",
             {"term": record.book.status.lower(), "label": record.book.status},
         )
-    for genre in deserialize_named_items(record.book.genres_json):
+    for genre in _metadata_items(record.book, "genres"):
         SubElement(
             entry,
             f"{{{ATOM_NS}}}category",
             {"term": f"genre:{genre.slug}", "label": genre.name},
         )
-    for tag in deserialize_named_items(record.book.tags_json):
+    for tag in _metadata_items(record.book, "tags"):
         SubElement(
             entry,
             f"{{{ATOM_NS}}}category",
@@ -274,6 +296,9 @@ async def list_downloadable_books(
     page_size: int,
     sort: str,
     query: str | None = None,
+    favorites_only: bool = False,
+    current_only: bool = False,
+    collection_id: str | None = None,
 ) -> tuple[list[OpdsBookRecord], int]:
     latest_epub_subquery = (
         select(Artifact.book_id)
@@ -298,6 +323,16 @@ async def list_downloadable_books(
         predicate = or_(Book.title.ilike(like), Book.slug.ilike(like), Book.author.ilike(like))
         book_query = book_query.where(predicate)
         count_query = count_query.where(predicate)
+    if favorites_only:
+        book_query = book_query.where(Book.is_favorite.is_(True))
+        count_query = count_query.where(Book.is_favorite.is_(True))
+    if current_only:
+        book_query = book_query.where(Book.is_current.is_(True))
+        count_query = count_query.where(Book.is_current.is_(True))
+    if collection_id:
+        collection_subquery = select(CollectionBook.book_id).where(CollectionBook.collection_id == collection_id).subquery()
+        book_query = book_query.join(collection_subquery, collection_subquery.c.book_id == Book.id)
+        count_query = count_query.join(collection_subquery, collection_subquery.c.book_id == Book.id)
 
     if sort == "title":
         book_query = book_query.order_by(Book.title.asc(), Book.id.asc())
@@ -369,7 +404,7 @@ async def list_grouped_metadata(
     )
     counts: dict[str, tuple[NamedTagSummary, set[str]]] = {}
     for record in records:
-        for item in deserialize_named_items(getattr(record.book, field_name)):
+        for item in _metadata_items(record.book, field_name):
             current = counts.get(item.slug)
             if current is None:
                 counts[item.slug] = (item, {record.book.id})
@@ -398,7 +433,7 @@ async def list_downloadable_books_by_group(
     filtered: list[OpdsBookRecord] = []
     group_name: str | None = None
     for record in records:
-        for item in deserialize_named_items(getattr(record.book, field_name)):
+        for item in _metadata_items(record.book, field_name):
             if item.slug == group_slug:
                 group_name = item.name
                 filtered.append(record)
@@ -410,22 +445,40 @@ async def list_downloadable_books_by_group(
     return filtered[start:end], total_count, group_name
 
 
+async def list_collection_groups(session: AsyncSession) -> list[tuple[UserCollection, int]]:
+    collections = (await session.exec(select(UserCollection).order_by(UserCollection.sort_order.asc(), UserCollection.name.asc()))).all()
+    memberships = (await session.exec(select(CollectionBook))).all()
+    counts: dict[str, int] = {}
+    for membership in memberships:
+        counts[membership.collection_id] = counts.get(membership.collection_id, 0) + 1
+    return [(collection, counts.get(collection.id, 0)) for collection in collections]
+
+
+async def get_collection(session: AsyncSession, collection_id: str) -> UserCollection | None:
+    return await session.get(UserCollection, collection_id)
+
+
 def build_group_feed(
     request: Request,
     *,
     title: str,
     route_name: str,
-    entries: list[tuple[NamedTagSummary, int]],
+    entries: list[tuple[NamedTagSummary, int]] | list[tuple[UserCollection, int]],
     self_href: str,
 ) -> bytes:
     feed = _feed_root(title, self_href, utcnow())
     _feed_link(feed, rel="self", href=self_href, type_value=_feed_type("navigation"))
     _feed_link(feed, rel="start", href=str(request.url_for("opds_root")), type_value=_feed_type("navigation"))
     for item, count in entries:
-        href = str(request.url_for(route_name, group_slug=item.slug))
+        if isinstance(item, UserCollection):
+            href = str(request.url_for(route_name, collection_id=item.id))
+            entry_title = item.name
+        else:
+            href = str(request.url_for(route_name, group_slug=item.slug))
+            entry_title = item.name
         entry = SubElement(feed, f"{{{ATOM_NS}}}entry")
         SubElement(entry, f"{{{ATOM_NS}}}id").text = href
-        SubElement(entry, f"{{{ATOM_NS}}}title").text = item.name
+        SubElement(entry, f"{{{ATOM_NS}}}title").text = entry_title
         SubElement(entry, f"{{{ATOM_NS}}}updated").text = _isoformat(utcnow())
         SubElement(
             entry,
@@ -433,6 +486,7 @@ def build_group_feed(
             {"type": "text"},
         ).text = f"{count} downloadable title{'s' if count != 1 else ''}"
         _entry_link(entry, rel="subsection", href=href, type_value=_feed_type("acquisition"))
+        _entry_link(entry, rel="alternate", href=href, type_value=_feed_type("acquisition"))
     return tostring(feed, encoding="utf-8", xml_declaration=True)
 
 
@@ -441,3 +495,11 @@ def _replace_query(href: str, **params: int) -> str:
     current = dict(parse_qsl(split.query, keep_blank_values=True))
     current.update({key: str(value) for key, value in params.items()})
     return urlunsplit((split.scheme, split.netloc, split.path, urlencode(current), split.fragment))
+
+
+def _metadata_items(book: Book, field_name: str) -> list[NamedTagSummary]:
+    if field_name == "genres":
+        return deserialize_named_items(book.opds_visible_genres_json or book.genres_json)
+    if field_name == "tags":
+        return deserialize_named_items(book.opds_visible_tags_json or book.tags_json)
+    raise ValueError(f"Unsupported metadata field: {field_name}")

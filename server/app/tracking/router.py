@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.database import get_database_session
@@ -8,6 +8,7 @@ from app.ranobelib import RanobeLibClient
 from app.source_auth.service import make_ranobelib_client
 from .schemas import (
     BranchUpdateRequest,
+    BookPreferencesUpdateRequest,
     BuildRequest,
     JobEnqueueResponse,
     PreviewBookRequest,
@@ -23,6 +24,7 @@ from .service import (
     list_tracked_books,
     preview_remote_book,
     track_book,
+    update_book_preferences,
     update_tracked_book_branch,
 )
 
@@ -68,9 +70,13 @@ async def preview_tracked_book(
 
 @router.get("/books", response_model=list[TrackedBookSummary])
 async def get_tracked_books(
+    sort: str = Query(default="added", pattern="^(added|updated|title)$"),
     session: AsyncSession = Depends(get_database_session),
 ) -> list[TrackedBookSummary]:
-    return await list_tracked_books(session)
+    try:
+        return await list_tracked_books(session, sort=sort)
+    except TrackingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/books/{book_id}", response_model=TrackedBookDetail)
@@ -105,6 +111,18 @@ async def update_tracked_book_branch_selection(
     except TrackingError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return JobEnqueueResponse(job_id=job.job_id, status=job.status)
+
+
+@router.patch("/books/{book_id}/preferences", response_model=TrackedBookDetail)
+async def update_tracked_book_preferences(
+    book_id: str,
+    request: BookPreferencesUpdateRequest,
+    session: AsyncSession = Depends(get_database_session),
+) -> TrackedBookDetail:
+    try:
+        return await update_book_preferences(session, book_id=book_id, request=request)
+    except TrackingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/books/{book_id}/check", status_code=status.HTTP_202_ACCEPTED)

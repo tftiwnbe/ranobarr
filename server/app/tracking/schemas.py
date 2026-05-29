@@ -39,6 +39,15 @@ class NamedTagSummary(BaseModel):
     slug: str
 
 
+class CollectionSummary(BaseModel):
+    id: str
+    slug: str
+    name: str
+    description: str | None = None
+    sort_order: int = 0
+    book_count: int = 0
+
+
 class PreviewBookResponse(BaseModel):
     slug: str
     title: str
@@ -78,11 +87,20 @@ class TrackedBookSummary(BaseModel):
     known_remote_chapters: int
     genres: list[NamedTagSummary]
     tags: list[NamedTagSummary]
+    opds_visible_genres: list[NamedTagSummary]
+    opds_visible_tags: list[NamedTagSummary]
     branch_mode: str
     selected_branch_id: str | None
     selected_branch_label: str | None
     branches: list[BranchSummary]
     enabled: bool
+    is_favorite: bool = False
+    is_current: bool = False
+    rating: int | None = None
+    comment: str | None = None
+    collections: list[CollectionSummary] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
     last_checked_at: datetime | None
     last_remote_chapter_key: str | None
 
@@ -101,3 +119,25 @@ class TrackedBookDetail(TrackedBookSummary):
     source_url: str
     summary: str | None
     snapshots: list[ChapterSnapshotSummary]
+
+
+class BookPreferencesUpdateRequest(BaseModel):
+    opds_visible_genre_slugs: list[str] | None = None
+    opds_visible_tag_slugs: list[str] | None = None
+    is_favorite: bool | None = None
+    is_current: bool | None = None
+    rating: int | None = Field(default=None, ge=0, le=5)
+    comment: str | None = None
+    collection_ids: list[str] | None = None
+
+
+class CollectionCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    sort_order: int = 0
+
+
+class CollectionUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    sort_order: int | None = None

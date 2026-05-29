@@ -225,3 +225,37 @@ async def test_check_updates_job_enqueues_build_when_artifact_is_stale(db, monke
     ).all()
     assert len(follow_up_jobs) == 1
     assert follow_up_jobs[0].status == "queued"
+
+
+async def test_runtime_enqueues_missing_epub_builds_for_existing_books(db) -> None:
+    book = Book(
+        slug="missing-epub-book",
+        source_url="https://ranobelib.me/ru/book/missing-epub-book",
+        title="Missing Epub Book",
+        available_chapters=1,
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    db.add(TrackRule(book_id=book.id, branch_mode="default"))
+    db.add(BookState(book_id=book.id, last_remote_chapter_key="v1_ch1"))
+    db.add(
+        ChapterSnapshot(
+            book_id=book.id,
+            chapter_key="v1_ch1",
+            volume="1",
+            number="1",
+            title="Only",
+            ordinal_index=1,
+        )
+    )
+    await db.commit()
+
+    runtime = JobRuntime()
+    await runtime._enqueue_missing_epub_builds(db)
+
+    follow_up_jobs = (
+        await db.exec(select(JobRecord).where(JobRecord.book_id == book.id, JobRecord.type == "build_artifact"))
+    ).all()
+    assert len(follow_up_jobs) == 1

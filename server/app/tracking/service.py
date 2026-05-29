@@ -1,10 +1,12 @@
 import json
 import re
+from hashlib import sha1
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -16,11 +18,13 @@ from app.models import (
     Artifact,
     Book,
     BookState,
+    CollectionBook,
     ChapterContentCache,
     ChapterSnapshot,
     JobEvent,
     JobRecord,
     TrackRule,
+    UserCollection,
 )
 from app.ranobelib import (
     RanobeLibClient,
@@ -35,12 +39,16 @@ from .schemas import (
     PreviewBookRequest,
     PreviewBookResponse,
     BranchUpdateRequest,
+    BookPreferencesUpdateRequest,
     ChapterSnapshotSummary,
+    CollectionSummary,
     TrackBookRequest,
     TrackBookResponse,
     TrackedBookDetail,
     TrackedBookSummary,
 )
+
+TRACKING_SORTS = {"added", "updated", "title"}
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -142,8 +150,15 @@ def extract_summary_text(node: Any) -> str:
 
 
 def slugify_metadata_name(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9а-яё]+", "-", value.lower(), flags=re.IGNORECASE)
-    return slug.strip("-") or "unknown"
+    ascii_value = (
+        value.encode("ascii", "ignore").decode("ascii").lower()
+    )
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_value)
+    slug = slug.strip("-")
+    if slug:
+        return slug
+    digest = sha1(value.encode("utf-8")).hexdigest()[:12]
+    return f"item-{digest}"
 
 
 def extract_named_items(raw_items: Any) -> list[NamedTagSummary]:
@@ -199,11 +214,20 @@ def deserialize_named_items(raw_value: str | None) -> list[NamedTagSummary]:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name") or "").strip()
-        slug = str(item.get("slug") or slugify_metadata_name(name)).strip()
         if not name:
             continue
+        slug = slugify_metadata_name(name)
         items.append(NamedTagSummary(name=name, slug=slug))
     return items
+
+
+def visible_named_items(raw_items: str | None, raw_visible_items: str | None) -> list[NamedTagSummary]:
+    items = deserialize_named_items(raw_items)
+    visible_items = deserialize_named_items(raw_visible_items)
+    if not visible_items:
+        return items
+    visible_map = {item.slug: item for item in visible_items}
+    return [item for item in items if item.slug in visible_map]
 
 
 def serialize_branches(branches: list[BranchSummary]) -> str:
@@ -243,6 +267,109 @@ def find_branch_label(branches: list[BranchSummary], selected_branch_id: str | N
         if branch.id == selected_branch_id:
             return branch.display
     return None
+
+
+def serialize_visible_named_items(all_items: list[NamedTagSummary], selected_slugs: list[str] | None) -> str | None:
+    if selected_slugs is None:
+        return None
+    selected = {slug.strip() for slug in selected_slugs if slug.strip()}
+    if not selected:
+        return json.dumps([], ensure_ascii=False)
+    filtered = [item for item in all_items if item.slug in selected]
+    return serialize_named_items(filtered)
+
+
+async def list_collections(session: AsyncSession) -> list[UserCollection]:
+    result = await session.exec(select(UserCollection).order_by(UserCollection.sort_order.asc(), UserCollection.name.asc()))
+    return result.all()
+
+
+async def get_collection_summaries_by_ids(
+    session: AsyncSession,
+    collection_ids: list[str],
+) -> list[CollectionSummary]:
+    if not collection_ids:
+        return []
+    result = await session.exec(select(UserCollection).where(UserCollection.id.in_(collection_ids)))
+    collections = {collection.id: collection for collection in result.all()}
+    summaries: list[CollectionSummary] = []
+    for collection_id in collection_ids:
+        collection = collections.get(collection_id)
+        if collection is None:
+            continue
+        summaries.append(
+            CollectionSummary(
+                id=collection.id,
+                slug=collection.slug,
+                name=collection.name,
+                description=collection.description,
+                sort_order=collection.sort_order,
+            )
+        )
+    return summaries
+
+
+async def collection_membership_by_book(session: AsyncSession) -> dict[str, list[CollectionSummary]]:
+    collections = await list_collections(session)
+    if not collections:
+        return {}
+    collection_map = {collection.id: collection for collection in collections}
+    membership_result = await session.exec(select(CollectionBook))
+    memberships = membership_result.all()
+    book_map: dict[str, list[CollectionSummary]] = {}
+    for membership in memberships:
+        collection = collection_map.get(membership.collection_id)
+        if collection is None:
+            continue
+        book_map.setdefault(membership.book_id, []).append(
+            CollectionSummary(
+                id=collection.id,
+                slug=collection.slug,
+                name=collection.name,
+                description=collection.description,
+                sort_order=collection.sort_order,
+            )
+        )
+    for values in book_map.values():
+        values.sort(key=lambda item: (item.sort_order, item.name.lower()))
+    return book_map
+
+
+def build_tracked_book_summary(
+    *,
+    book: Book,
+    rule: TrackRule,
+    state: BookState,
+    known_remote_chapters: int,
+    collections: list[CollectionSummary],
+) -> TrackedBookSummary:
+    return TrackedBookSummary(
+        book_id=book.id,
+        slug=book.slug,
+        title=normalize_book_title(book.title),
+        author=book.author,
+        cover_url=book.cover_url,
+        available_chapters=book.available_chapters,
+        known_remote_chapters=known_remote_chapters,
+        genres=deserialize_named_items(book.genres_json),
+        tags=deserialize_named_items(book.tags_json),
+        opds_visible_genres=visible_named_items(book.genres_json, book.opds_visible_genres_json),
+        opds_visible_tags=visible_named_items(book.tags_json, book.opds_visible_tags_json),
+        branch_mode=rule.branch_mode,
+        selected_branch_id=rule.selected_branch_id,
+        selected_branch_label=rule.selected_branch_label,
+        branches=deserialize_branches(book.branches_json),
+        enabled=rule.enabled,
+        is_favorite=book.is_favorite,
+        is_current=book.is_current,
+        rating=book.rating,
+        comment=book.comment,
+        collections=collections,
+        created_at=book.created_at,
+        updated_at=book.updated_at,
+        last_checked_at=state.last_checked_at,
+        last_remote_chapter_key=state.last_remote_chapter_key,
+    )
 
 
 def select_chapters_for_rule(
@@ -399,6 +526,8 @@ async def track_book(
             summary=resolved.summary,
             genres_json=serialize_named_items(resolved.genres),
             tags_json=serialize_named_items(resolved.tags),
+            opds_visible_genres_json=serialize_named_items(resolved.genres),
+            opds_visible_tags_json=serialize_named_items(resolved.tags),
             branches_json=serialize_branches(resolved.branches),
             available_chapters=resolved.available_chapters,
         )
@@ -413,6 +542,10 @@ async def track_book(
         book.summary = resolved.summary
         book.genres_json = serialize_named_items(resolved.genres)
         book.tags_json = serialize_named_items(resolved.tags)
+        if book.opds_visible_genres_json is None:
+            book.opds_visible_genres_json = serialize_named_items(resolved.genres)
+        if book.opds_visible_tags_json is None:
+            book.opds_visible_tags_json = serialize_named_items(resolved.tags)
         book.branches_json = serialize_branches(resolved.branches)
         book.available_chapters = resolved.available_chapters
         session.add(book)
@@ -467,36 +600,44 @@ async def track_book(
     )
 
 
-async def list_tracked_books(session: AsyncSession) -> list[TrackedBookSummary]:
+async def list_tracked_books(
+    session: AsyncSession,
+    *,
+    sort: str = "added",
+) -> list[TrackedBookSummary]:
+    if sort not in TRACKING_SORTS:
+        raise TrackingError(f"Unsupported sort: {sort}")
+
     query = (
         select(Book, TrackRule, BookState)
         .join(TrackRule, TrackRule.book_id == Book.id)
         .join(BookState, BookState.book_id == Book.id)
-        .order_by(Book.created_at.desc())
     )
+    if sort == "title":
+        query = query.order_by(Book.title.asc(), Book.id.asc())
+    elif sort == "updated":
+        query = query.order_by(
+            func.coalesce(BookState.last_built_at, BookState.last_checked_at, Book.updated_at, Book.created_at).desc(),
+            Book.title.asc(),
+        )
+    else:
+        query = query.order_by(Book.created_at.desc(), Book.title.asc())
+
     result = await session.exec(query)
     rows = result.all()
-    return [
-        TrackedBookSummary(
-            book_id=book.id,
-            slug=book.slug,
-            title=normalize_book_title(book.title),
-            author=book.author,
-            cover_url=book.cover_url,
-            available_chapters=book.available_chapters,
-            known_remote_chapters=await count_chapter_snapshots(session, book.id),
-            genres=deserialize_named_items(book.genres_json),
-            tags=deserialize_named_items(book.tags_json),
-            branch_mode=rule.branch_mode,
-            selected_branch_id=rule.selected_branch_id,
-            selected_branch_label=rule.selected_branch_label,
-            branches=deserialize_branches(book.branches_json),
-            enabled=rule.enabled,
-            last_checked_at=state.last_checked_at,
-            last_remote_chapter_key=state.last_remote_chapter_key,
+    collection_map = await collection_membership_by_book(session)
+    summaries: list[TrackedBookSummary] = []
+    for book, rule, state in rows:
+        summaries.append(
+            build_tracked_book_summary(
+                book=book,
+                rule=rule,
+                state=state,
+                known_remote_chapters=await count_chapter_snapshots(session, book.id),
+                collections=collection_map.get(book.id, []),
+            )
         )
-        for book, rule, state in rows
-    ]
+    return summaries
 
 
 async def get_tracked_book_detail(session: AsyncSession, book_id: str) -> TrackedBookDetail | None:
@@ -518,26 +659,43 @@ async def get_tracked_book_detail(session: AsyncSession, book_id: str) -> Tracke
         .order_by(ChapterSnapshot.ordinal_index.asc())
     )
     snapshots = snapshots_result.all()
+    collection_map = await collection_membership_by_book(session)
+    summary = build_tracked_book_summary(
+        book=book,
+        rule=rule,
+        state=state,
+        known_remote_chapters=len(snapshots),
+        collections=collection_map.get(book.id, []),
+    )
 
     return TrackedBookDetail(
-        book_id=book.id,
-        slug=book.slug,
-        title=normalize_book_title(book.title),
+        book_id=summary.book_id,
+        slug=summary.slug,
+        title=summary.title,
         source_url=book.source_url,
-        author=book.author,
+        author=summary.author,
         summary=book.summary,
-        cover_url=book.cover_url,
-        available_chapters=book.available_chapters,
-        known_remote_chapters=len(snapshots),
-        genres=deserialize_named_items(book.genres_json),
-        tags=deserialize_named_items(book.tags_json),
-        branch_mode=rule.branch_mode,
-        selected_branch_id=rule.selected_branch_id,
-        selected_branch_label=rule.selected_branch_label,
-        branches=deserialize_branches(book.branches_json),
-        enabled=rule.enabled,
-        last_checked_at=state.last_checked_at,
-        last_remote_chapter_key=state.last_remote_chapter_key,
+        cover_url=summary.cover_url,
+        available_chapters=summary.available_chapters,
+        known_remote_chapters=summary.known_remote_chapters,
+        genres=summary.genres,
+        tags=summary.tags,
+        opds_visible_genres=summary.opds_visible_genres,
+        opds_visible_tags=summary.opds_visible_tags,
+        branch_mode=summary.branch_mode,
+        selected_branch_id=summary.selected_branch_id,
+        selected_branch_label=summary.selected_branch_label,
+        branches=summary.branches,
+        enabled=summary.enabled,
+        is_favorite=summary.is_favorite,
+        is_current=summary.is_current,
+        rating=summary.rating,
+        comment=summary.comment,
+        collections=summary.collections,
+        created_at=summary.created_at,
+        updated_at=summary.updated_at,
+        last_checked_at=summary.last_checked_at,
+        last_remote_chapter_key=summary.last_remote_chapter_key,
         snapshots=[
             ChapterSnapshotSummary(
                 chapter_key=snapshot.chapter_key,
@@ -554,8 +712,10 @@ async def get_tracked_book_detail(session: AsyncSession, book_id: str) -> Tracke
 
 
 async def count_chapter_snapshots(session: AsyncSession, book_id: str) -> int:
-    result = await session.exec(select(ChapterSnapshot).where(ChapterSnapshot.book_id == book_id))
-    return len(result.all())
+    result = await session.exec(
+        select(func.count()).select_from(ChapterSnapshot).where(ChapterSnapshot.book_id == book_id)
+    )
+    return int(result.one())
 
 
 async def process_check_updates_job(
@@ -662,6 +822,10 @@ async def process_check_updates_job(
     book.summary = normalize_summary_value(novel_info.get("summary"))
     book.genres_json = serialize_named_items(extract_named_items(novel_info.get("genres")))
     book.tags_json = serialize_named_items(extract_named_items(novel_info.get("tags")))
+    if not book.opds_visible_genres_json:
+        book.opds_visible_genres_json = book.genres_json
+    if not book.opds_visible_tags_json:
+        book.opds_visible_tags_json = book.tags_json
     book.branches_json = serialize_branches(branch_list)
     book.updated_at = now
     state.last_remote_chapter_key = latest_remote_key
@@ -711,6 +875,10 @@ async def delete_tracked_book(session: AsyncSession, book_id: str) -> bool:
     snapshots_result = await session.exec(select(ChapterSnapshot).where(ChapterSnapshot.book_id == book_id))
     for snapshot in snapshots_result.all():
         await session.delete(snapshot)
+
+    collection_membership_result = await session.exec(select(CollectionBook).where(CollectionBook.book_id == book_id))
+    for membership in collection_membership_result.all():
+        await session.delete(membership)
 
     state_result = await session.exec(select(BookState).where(BookState.book_id == book_id))
     state = state_result.one_or_none()
@@ -787,21 +955,70 @@ async def update_tracked_book_branch(
     )
     updated = await get_tracked_book_detail(session, book_id)
     assert updated is not None
-    return TrackedBookSummary(
-        book_id=updated.book_id,
-        slug=updated.slug,
-        title=updated.title,
-        author=updated.author,
-        cover_url=updated.cover_url,
-        available_chapters=updated.available_chapters,
-        known_remote_chapters=updated.known_remote_chapters,
-        genres=updated.genres,
-        tags=updated.tags,
-        branch_mode=updated.branch_mode,
-        selected_branch_id=updated.selected_branch_id,
-        selected_branch_label=updated.selected_branch_label,
-        branches=updated.branches,
-        enabled=updated.enabled,
-        last_checked_at=updated.last_checked_at,
-        last_remote_chapter_key=updated.last_remote_chapter_key,
-    ), job
+    return TrackedBookSummary.model_validate(updated.model_dump()), job
+
+
+async def update_book_preferences(
+    session: AsyncSession,
+    *,
+    book_id: str,
+    request: BookPreferencesUpdateRequest,
+) -> TrackedBookDetail:
+    detail = await get_tracked_book_detail(session, book_id)
+    if detail is None:
+        raise TrackingError("Tracked book not found")
+
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise TrackingError("Tracked book not found")
+
+    field_names = request.model_fields_set
+    genres = deserialize_named_items(book.genres_json)
+    tags = deserialize_named_items(book.tags_json)
+
+    if "opds_visible_genre_slugs" in field_names:
+        book.opds_visible_genres_json = serialize_visible_named_items(genres, request.opds_visible_genre_slugs)
+    if "opds_visible_tag_slugs" in field_names:
+        book.opds_visible_tags_json = serialize_visible_named_items(tags, request.opds_visible_tag_slugs)
+    if "is_favorite" in field_names:
+        book.is_favorite = bool(request.is_favorite)
+    if "is_current" in field_names:
+        if request.is_current:
+            current_result = await session.exec(select(Book).where(Book.is_current.is_(True), Book.id != book_id))
+            for current_book in current_result.all():
+                current_book.is_current = False
+                current_book.updated_at = utcnow()
+                session.add(current_book)
+        book.is_current = bool(request.is_current)
+    if "rating" in field_names:
+        book.rating = request.rating
+    if "comment" in field_names:
+        normalized_comment = (request.comment or "").strip()
+        book.comment = normalized_comment or None
+
+    if "collection_ids" in field_names:
+        requested_collection_ids = list(dict.fromkeys(request.collection_ids or []))
+        collection_result = await session.exec(select(UserCollection).where(UserCollection.id.in_(requested_collection_ids)))
+        valid_collection_ids = {collection.id for collection in collection_result.all()}
+        missing_collection_ids = [collection_id for collection_id in requested_collection_ids if collection_id not in valid_collection_ids]
+        if missing_collection_ids:
+            raise TrackingError("Some collections do not exist")
+
+        membership_result = await session.exec(select(CollectionBook).where(CollectionBook.book_id == book_id))
+        existing_memberships = {membership.collection_id: membership for membership in membership_result.all()}
+
+        requested_set = set(requested_collection_ids)
+        for collection_id, membership in existing_memberships.items():
+            if collection_id not in requested_set:
+                await session.delete(membership)
+        for collection_id in requested_collection_ids:
+            if collection_id not in existing_memberships:
+                session.add(CollectionBook(collection_id=collection_id, book_id=book_id))
+
+    book.updated_at = utcnow()
+    session.add(book)
+    await session.commit()
+
+    updated = await get_tracked_book_detail(session, book_id)
+    assert updated is not None
+    return updated
