@@ -11,6 +11,15 @@ export type BranchSummary = {
   display: string;
 };
 
+export type CollectionSummary = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  book_count: number;
+};
+
 export type CredentialView = {
   provider: string;
   has_access_token: boolean;
@@ -39,11 +48,20 @@ export type TrackedBook = {
   known_remote_chapters: number;
   genres: NamedTagSummary[];
   tags: NamedTagSummary[];
+  opds_visible_genres: NamedTagSummary[];
+  opds_visible_tags: NamedTagSummary[];
   branch_mode: string;
   selected_branch_id: string | null;
   selected_branch_label: string | null;
   branches: BranchSummary[];
   enabled: boolean;
+  is_favorite: boolean;
+  is_current: boolean;
+  rating: number | null;
+  comment: string | null;
+  collections: CollectionSummary[];
+  created_at: string;
+  updated_at: string;
   last_checked_at: string | null;
   last_remote_chapter_key: string | null;
 };
@@ -85,6 +103,16 @@ export type TrackBookPayload = {
   url: string;
   branch_mode: string;
   selected_branch_id: string | null;
+};
+
+export type BookPreferencesPayload = {
+  opds_visible_genre_slugs?: string[] | null;
+  opds_visible_tag_slugs?: string[] | null;
+  is_favorite?: boolean | null;
+  is_current?: boolean | null;
+  rating?: number | null;
+  comment?: string | null;
+  collection_ids?: string[] | null;
 };
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -129,8 +157,8 @@ export async function validateCredential(): Promise<CredentialValidation> {
   });
 }
 
-export async function listTrackedBooks(): Promise<TrackedBook[]> {
-  return apiFetch<TrackedBook[]>("/api/v1/tracking/books");
+export async function listTrackedBooks(sort: "added" | "updated" | "title" = "updated"): Promise<TrackedBook[]> {
+  return apiFetch<TrackedBook[]>(`/api/v1/tracking/books?sort=${sort}`);
 }
 
 export async function previewTrackedBook(url: string): Promise<PreviewBook> {
@@ -160,6 +188,13 @@ export async function deleteTrackedBook(bookId: string): Promise<void> {
   });
 }
 
+export async function updateBookPreferences(bookId: string, payload: BookPreferencesPayload): Promise<TrackedBook> {
+  return apiFetch<TrackedBook>(`/api/v1/tracking/books/${bookId}/preferences`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function triggerCheck(bookId: string): Promise<void> {
   await apiFetch(`/api/v1/tracking/books/${bookId}/check`, {
     method: "POST"
@@ -172,4 +207,25 @@ export async function latestArtifact(bookId: string): Promise<ArtifactSummary | 
 
 export async function listJobs(): Promise<JobSummary[]> {
   return apiFetch<JobSummary[]>("/api/v1/jobs");
+}
+
+export async function listCollections(): Promise<CollectionSummary[]> {
+  return apiFetch<CollectionSummary[]>("/api/v1/library/collections");
+}
+
+export async function createCollection(payload: {
+  name: string;
+  description?: string | null;
+  sort_order?: number;
+}): Promise<CollectionSummary> {
+  return apiFetch<CollectionSummary>("/api/v1/library/collections", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteCollection(collectionId: string): Promise<void> {
+  await apiFetch(`/api/v1/library/collections/${collectionId}`, {
+    method: "DELETE"
+  });
 }

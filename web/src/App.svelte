@@ -9,20 +9,26 @@
   import {
     type BranchSummary,
     createTrackedBook,
+    createCollection,
+    deleteCollection,
     deleteTrackedBook,
     getCredential,
+    listCollections,
     latestArtifact,
     listJobs,
     listTrackedBooks,
     previewTrackedBook,
     putCredential,
     triggerCheck,
+    updateBookPreferences,
     updateTrackedBookBranch,
     validateCredential,
     type ArtifactSummary,
+    type CollectionSummary,
     type CredentialValidation,
     type CredentialView,
     type JobSummary,
+    type NamedTagSummary,
     type PreviewBook,
     type TrackedBook,
   } from "./lib/api";
@@ -32,6 +38,7 @@
   // ─── State ───────────────────────────���────────────────
   let books = $state<BookCard[]>([]);
   let jobs = $state<JobSummary[]>([]);
+  let collections = $state<CollectionSummary[]>([]);
   let credential = $state<CredentialView | null>(null);
   let validation = $state<CredentialValidation | null>(null);
 
@@ -40,6 +47,8 @@
   let validating = $state(false);
   let previewing = $state(false);
   let actionBookId = $state<string | null>(null);
+  let savingPreferences = $state(false);
+  let savingCollection = $state(false);
 
   // Form fields
   let accessToken = $state("");
@@ -47,18 +56,29 @@
   let bookUrl = $state("");
   let selectedBranchId = $state("");
   let preview = $state<PreviewBook | null>(null);
+  let collectionName = $state("");
+  let collectionDescription = $state("");
 
   // UI state
   let drawerOpen = $state(false);
   let drawerClosing = $state(false);
-  let drawerTab = $state<"track" | "auth" | "jobs" | "book">("track");
+  let drawerTab = $state<"track" | "auth" | "jobs" | "library" | "book">("track");
   let drawerBookId = $state<string | null>(null);
   let searchQuery = $state("");
-  let sortMode = $state<"title" | "checked" | "chapters">("title");
-  let sortAsc = $state(true);
+  let sortMode = $state<"title" | "updated" | "added">("updated");
   let filterOpen = $state(false);
   let filterHasEpub = $state(false);
+  let filterFavorites = $state(false);
+  let filterCurrent = $state(false);
+  let filterCollectionId = $state("");
   let drawerCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  let preferenceVisibleGenres = $state<string[]>([]);
+  let preferenceVisibleTags = $state<string[]>([]);
+  let preferenceCollectionIds = $state<string[]>([]);
+  let preferenceIsFavorite = $state(false);
+  let preferenceIsCurrent = $state(false);
+  let preferenceRating = $state("");
+  let preferenceComment = $state("");
 
   // ─── Derived ─────���───────────────────�─────────────────
   const runningJobs = $derived(
@@ -78,6 +98,11 @@
     return states;
   });
 
+  const currentBook = $derived(
+    books.find((book) => book.is_current) ?? null,
+  );
+  const favoriteCount = $derived(books.filter((book) => book.is_favorite).length);
+
   const filteredBooks = $derived.by(() => {
     let result = books.slice();
 
@@ -93,23 +118,32 @@
     if (filterHasEpub) {
       result = result.filter((b) => b.latestArtifact !== null);
     }
+    if (filterFavorites) {
+      result = result.filter((b) => b.is_favorite);
+    }
+    if (filterCurrent) {
+      result = result.filter((b) => b.is_current);
+    }
+    if (filterCollectionId) {
+      result = result.filter((b) => b.collections.some((collection) => collection.id === filterCollectionId));
+    }
 
     result.sort((a, b) => {
       let cmp = 0;
       if (sortMode === "title") {
         cmp = a.title.localeCompare(b.title);
-      } else if (sortMode === "checked") {
-        const da = a.last_checked_at
-          ? new Date(a.last_checked_at).getTime()
-          : 0;
-        const db = b.last_checked_at
-          ? new Date(b.last_checked_at).getTime()
+      } else if (sortMode === "updated") {
+        const da = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const db = b.updated_at
+          ? new Date(b.updated_at).getTime()
           : 0;
         cmp = db - da;
-      } else if (sortMode === "chapters") {
-        cmp = b.known_remote_chapters - a.known_remote_chapters;
+      } else if (sortMode === "added") {
+        const da = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const db = b.created_at ? new Date(b.created_at).getTime() : 0;
+        cmp = db - da;
       }
-      return sortAsc ? cmp : -cmp;
+      return cmp;
     });
 
     return result;
@@ -126,9 +160,10 @@
       credential = await getCredential();
       accessToken = "";
       refreshToken = "";
-      const [trackedBooks, recentJobs] = await Promise.all([
-        listTrackedBooks(),
+      const [trackedBooks, recentJobs, libraryCollections] = await Promise.all([
+        listTrackedBooks("updated"),
         listJobs(),
+        listCollections(),
       ]);
       const artifactPairs = await Promise.all(
         trackedBooks.map(async (book) => ({
@@ -144,6 +179,7 @@
         latestArtifact: artifactMap.get(book.book_id) ?? null,
       }));
       jobs = recentJobs.slice(0, 20);
+      collections = libraryCollections;
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "failed to load dashboard",
@@ -275,6 +311,7 @@
     actionBookId = book.book_id;
     try {
       await deleteTrackedBook(book.book_id);
+      closeDrawer();
       toast.success("title removed");
       await loadDashboard();
     } catch (error) {
@@ -283,6 +320,65 @@
       );
     } finally {
       actionBookId = null;
+    }
+  }
+
+  async function saveBookPreferences() {
+    if (!drawerBook) return;
+    savingPreferences = true;
+    try {
+      await updateBookPreferences(drawerBook.book_id, {
+        opds_visible_genre_slugs: preferenceVisibleGenres,
+        opds_visible_tag_slugs: preferenceVisibleTags,
+        is_favorite: preferenceIsFavorite,
+        is_current: preferenceIsCurrent,
+        rating: preferenceRating ? Number(preferenceRating) : null,
+        comment: preferenceComment.trim() || null,
+        collection_ids: preferenceCollectionIds,
+      });
+      toast.success("saved title preferences");
+      await loadDashboard();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "failed to save title preferences",
+      );
+    } finally {
+      savingPreferences = false;
+    }
+  }
+
+  async function createLibraryCollection() {
+    if (!collectionName.trim()) return;
+    savingCollection = true;
+    try {
+      await createCollection({
+        name: collectionName.trim(),
+        description: collectionDescription.trim() || null,
+      });
+      collectionName = "";
+      collectionDescription = "";
+      toast.success("collection created");
+      await loadDashboard();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "failed to create collection",
+      );
+    } finally {
+      savingCollection = false;
+    }
+  }
+
+  async function removeCollection(collection: CollectionSummary) {
+    const confirmed = window.confirm(`Delete collection "${collection.name}"?`);
+    if (!confirmed) return;
+    try {
+      await deleteCollection(collection.id);
+      toast.success("collection removed");
+      await loadDashboard();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "failed to delete collection",
+      );
     }
   }
 
@@ -312,13 +408,8 @@
     return `${(value / (1024 * 1024)).toFixed(1)} mb`;
   }
 
-  function cycleSort(mode: typeof sortMode) {
-    if (sortMode === mode) {
-      sortAsc = !sortAsc;
-    } else {
-      sortMode = mode;
-      sortAsc = true;
-    }
+  function setSort(mode: typeof sortMode) {
+    sortMode = mode;
   }
 
   function openDrawer(tab: typeof drawerTab) {
@@ -371,13 +462,64 @@
     ];
   }
 
+  function collectionFilterOptions(items: CollectionSummary[]): SelectOption[] {
+    return [
+      { value: "", label: "all collections" },
+      ...items.map((collection) => ({
+        value: collection.id,
+        label: collection.name,
+      })),
+    ];
+  }
+
+  const ratingOptions: SelectOption[] = [
+    { value: "", label: "no rating" },
+    { value: "1", label: "1 / 5" },
+    { value: "2", label: "2 / 5" },
+    { value: "3", label: "3 / 5" },
+    { value: "4", label: "4 / 5" },
+    { value: "5", label: "5 / 5" },
+  ];
+
   function bookSyncLabel(bookId: string): string | null {
     const state = syncStateByBook.get(bookId);
     if (!state) return null;
     return state === "running" ? "syncing" : "queued";
   }
 
+  function toggleSlugValue(values: string[], slug: string) {
+    return values.includes(slug)
+      ? values.filter((value) => value !== slug)
+      : [...values, slug];
+  }
+
+  function toggleNamedValue(kind: "genre" | "tag", item: NamedTagSummary) {
+    if (kind === "genre") {
+      preferenceVisibleGenres = toggleSlugValue(preferenceVisibleGenres, item.slug);
+      return;
+    }
+    preferenceVisibleTags = toggleSlugValue(preferenceVisibleTags, item.slug);
+  }
+
+  function toggleCollectionValue(collectionId: string) {
+    preferenceCollectionIds = toggleSlugValue(preferenceCollectionIds, collectionId);
+  }
+
+  function syncDrawerBookPreferences(book: BookCard | null) {
+    if (!book) return;
+    preferenceVisibleGenres = book.opds_visible_genres.map((item) => item.slug);
+    preferenceVisibleTags = book.opds_visible_tags.map((item) => item.slug);
+    preferenceCollectionIds = book.collections.map((item) => item.id);
+    preferenceIsFavorite = book.is_favorite;
+    preferenceIsCurrent = book.is_current;
+    preferenceRating = book.rating ? String(book.rating) : "";
+    preferenceComment = book.comment ?? "";
+  }
+
   onMount(loadDashboard);
+  $effect(() => {
+    syncDrawerBookPreferences(drawerBook);
+  });
   onDestroy(() => {
     if (drawerCloseTimer) {
       clearTimeout(drawerCloseTimer);
@@ -409,6 +551,18 @@
     </div>
 
     <div class="header-stats">
+      {#if currentBook}
+        <div class="stat-pill">
+          <span class="stat-pill-value">1</span>
+          <span>current</span>
+        </div>
+      {/if}
+      {#if favoriteCount > 0}
+        <div class="stat-pill">
+          <span class="stat-pill-value">{favoriteCount}</span>
+          <span>favorites</span>
+        </div>
+      {/if}
       {#if runningJobs > 0}
         <div class="stat-pill stat-pill--running">
           <span class="stat-pill-value">{runningJobs}</span>
@@ -445,28 +599,26 @@
       <button
         type="button"
         class="sort-btn"
-        onclick={() => cycleSort("title")}
+        class:active={sortMode === "title"}
+        onclick={() => setSort("title")}
         title="Sort by title"
-      >
-        {#if sortMode === "title"}
-          {sortAsc ? "a→z" : "z→a"}
-        {:else}
-          a–z
-        {/if}
-      </button>
+      >title</button>
 
       <button
         type="button"
         class="sort-btn"
-        onclick={() => cycleSort("checked")}
-        title="Sort by last checked"
-      >
-        {#if sortMode === "checked"}
-          {sortAsc ? "↑ recent" : "↓ old"}
-        {:else}
-          date
-        {/if}
-      </button>
+        class:active={sortMode === "updated"}
+        onclick={() => setSort("updated")}
+        title="Sort by update date"
+      >updated</button>
+
+      <button
+        type="button"
+        class="sort-btn"
+        class:active={sortMode === "added"}
+        onclick={() => setSort("added")}
+        title="Sort by add date"
+      >added</button>
 
       <button
         type="button"
@@ -500,18 +652,44 @@
         <button
           type="button"
           class="filter-chip"
-          class:selected={sortMode === "chapters"}
-          onclick={() => cycleSort("chapters")}
+          class:selected={filterCurrent}
+          onclick={() => {
+            filterCurrent = !filterCurrent;
+          }}
         >
-          most chapters
+          current
         </button>
-        {#if searchQuery || filterHasEpub}
+        <button
+          type="button"
+          class="filter-chip"
+          class:selected={filterFavorites}
+          onclick={() => {
+            filterFavorites = !filterFavorites;
+          }}
+        >
+          favorites
+        </button>
+        <div class="filter-select-wrap">
+          <Select
+            class="filter-select"
+            value={filterCollectionId}
+            options={collectionFilterOptions(collections)}
+            placeholder="all collections"
+            onValueChange={(value) => {
+              filterCollectionId = value;
+            }}
+          />
+        </div>
+        {#if searchQuery || filterHasEpub || filterFavorites || filterCurrent || filterCollectionId}
           <button
             type="button"
             class="filter-chip"
             onclick={() => {
               searchQuery = "";
               filterHasEpub = false;
+              filterFavorites = false;
+              filterCurrent = false;
+              filterCollectionId = "";
             }}>✕ clear</button
           >
         {/if}
@@ -519,7 +697,7 @@
     {/if}
 
     <!-- Results count -->
-    {#if !loading && (searchQuery || filterHasEpub)}
+    {#if !loading && (searchQuery || filterHasEpub || filterFavorites || filterCurrent || filterCollectionId)}
       <div class="results-count">
         {filteredBooks.length} of {books.length} title{books.length !== 1
           ? "s"
@@ -637,6 +815,7 @@
               {#if drawerTab === "track"}add title
               {:else if drawerTab === "auth"}ranobelib auth
               {:else if drawerTab === "jobs"}recent jobs
+              {:else if drawerTab === "library"}library
               {:else}title controls{/if}
             </span>
           {/if}
@@ -827,6 +1006,61 @@
                   {/each}
                 {/if}
               </div>
+            {:else if drawerTab === "library"}
+              <div class="drawer-body">
+                <div class="form-field">
+                  <label for="collection-name" class="form-label">new collection</label>
+                  <input
+                    id="collection-name"
+                    class="form-input"
+                    type="text"
+                    placeholder="favorites, backlog, weekend..."
+                    bind:value={collectionName}
+                  />
+                </div>
+
+                <div class="form-field">
+                  <label for="collection-description" class="form-label">description</label>
+                  <textarea
+                    id="collection-description"
+                    class="form-textarea"
+                    placeholder="optional note"
+                    bind:value={collectionDescription}
+                  ></textarea>
+                </div>
+
+                <button
+                  type="button"
+                  class="btn btn-solid"
+                  disabled={savingCollection || !collectionName.trim()}
+                  onclick={() => void createLibraryCollection()}
+                >
+                  {savingCollection ? "creating..." : "create collection"}
+                </button>
+
+                <div class="drawer-section">
+                  <div class="drawer-section-label">collections</div>
+                  {#if collections.length === 0}
+                    <div class="drawer-empty-copy">no collections yet</div>
+                  {:else}
+                    <div class="collection-list">
+                      {#each collections as collection}
+                        <div class="collection-row">
+                          <div>
+                            <div class="collection-name">{collection.name}</div>
+                            <div class="collection-meta">{collection.book_count} title{collection.book_count !== 1 ? "s" : ""}</div>
+                          </div>
+                          <button
+                            type="button"
+                            class="btn btn-danger btn-compact"
+                            onclick={() => void removeCollection(collection)}
+                          >delete</button>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              </div>
             {:else if drawerBook}
               <div class="drawer-body">
                 <div class="form-field">
@@ -842,7 +1076,106 @@
                   />
                 </div>
 
+                <div class="toggle-row">
+                  <button
+                    type="button"
+                    class="filter-chip"
+                    class:selected={preferenceIsCurrent}
+                    onclick={() => {
+                      preferenceIsCurrent = !preferenceIsCurrent;
+                    }}
+                  >
+                    current
+                  </button>
+                  <button
+                    type="button"
+                    class="filter-chip"
+                    class:selected={preferenceIsFavorite}
+                    onclick={() => {
+                      preferenceIsFavorite = !preferenceIsFavorite;
+                    }}
+                  >
+                    favorite
+                  </button>
+                </div>
+
+                <div class="form-field">
+                  <label for="book-rating" class="form-label">rating</label>
+                  <Select
+                    id="book-rating"
+                    class="form-select"
+                    bind:value={preferenceRating}
+                    options={ratingOptions}
+                    placeholder="no rating"
+                  />
+                </div>
+
+                <div class="form-field">
+                  <label for="book-comment" class="form-label">comment</label>
+                  <textarea
+                    id="book-comment"
+                    class="form-textarea"
+                    placeholder="private note"
+                    bind:value={preferenceComment}
+                  ></textarea>
+                </div>
+
+                <div class="drawer-section">
+                  <div class="drawer-section-label">collections</div>
+                  <div class="chip-grid">
+                    {#each collections as collection}
+                      <button
+                        type="button"
+                        class="filter-chip"
+                        class:selected={preferenceCollectionIds.includes(collection.id)}
+                        onclick={() => toggleCollectionValue(collection.id)}
+                      >
+                        {collection.name}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+
+                <div class="drawer-section">
+                  <div class="drawer-section-label">visible genres in opds</div>
+                  <div class="chip-grid">
+                    {#each drawerBook.genres as genre}
+                      <button
+                        type="button"
+                        class="filter-chip"
+                        class:selected={preferenceVisibleGenres.includes(genre.slug)}
+                        onclick={() => toggleNamedValue("genre", genre)}
+                      >
+                        {genre.name}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+
+                <div class="drawer-section">
+                  <div class="drawer-section-label">visible tags in opds</div>
+                  <div class="chip-grid">
+                    {#each drawerBook.tags as tag}
+                      <button
+                        type="button"
+                        class="filter-chip"
+                        class:selected={preferenceVisibleTags.includes(tag.slug)}
+                        onclick={() => toggleNamedValue("tag", tag)}
+                      >
+                        {tag.name}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+
                 <div class="book-drawer-actions">
+                  <button
+                    type="button"
+                    class="btn btn-solid"
+                    disabled={savingPreferences}
+                    onclick={() => void saveBookPreferences()}
+                    >save</button
+                  >
                   <button
                     type="button"
                     class="btn btn-outline"
@@ -876,14 +1209,27 @@
       class="fab fab-secondary"
       onclick={() => openDrawer("jobs")}
       title="Recent jobs"
-      aria-label="Recent jobs">≡</button
+      aria-label="Recent jobs">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"></path></svg>
+    </button
+    >
+    <button
+      type="button"
+      class="fab fab-secondary"
+      onclick={() => openDrawer("library")}
+      title="Library"
+      aria-label="Library">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12v14H6zM9 9h6M9 13h6"></path></svg>
+    </button
     >
     <button
       type="button"
       class="fab fab-secondary"
       onclick={() => openDrawer("auth")}
       title="Auth settings"
-      aria-label="Auth settings">⚿</button
+      aria-label="Auth settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l6 3v5c0 4.2-2.6 7.7-6 9-3.4-1.3-6-4.8-6-9V6zM12 10v4M12 7h.01"></path></svg>
+    </button
     >
     <button
       type="button"

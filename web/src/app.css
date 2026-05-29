@@ -215,9 +215,9 @@ h4 {
 }
 
 .fab-secondary {
-  width: 38px;
-  height: 38px;
-  font-size: 16px;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
   background: rgba(16, 16, 20, 0.85);
   color: var(--text-muted);
   box-shadow:
@@ -228,6 +228,16 @@ h4 {
 .fab-secondary:hover {
   color: var(--text);
   background: var(--void-4);
+}
+
+.fab svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* ─── Page body ──────────────────────────────── */
@@ -309,6 +319,12 @@ h4 {
   border-color: var(--void-6);
 }
 
+.sort-btn.active {
+  color: var(--text);
+  border-color: var(--void-6);
+  background: var(--void-4);
+}
+
 .filter-btn {
   display: inline-flex;
   align-items: center;
@@ -352,6 +368,16 @@ h4 {
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
   background: rgba(5, 5, 7, 0.5);
+}
+
+.filter-select-wrap {
+  min-width: 11rem;
+}
+
+.filter-select {
+  height: 26px;
+  min-width: 11rem;
+  padding-right: 1.8rem;
 }
 
 .filter-chip {
@@ -638,6 +664,12 @@ h4 {
   color: var(--error);
 }
 
+.btn-compact {
+  height: 28px;
+  padding: 0 0.6rem;
+  font-size: 10px;
+}
+
 /* ─── Empty / loading ──────────────────────────────── */
 .empty-state {
   padding: 3rem 1rem;
@@ -812,6 +844,65 @@ h4 {
 .book-drawer-actions .btn-danger {
   flex: 0 0 auto;
   min-width: 5.5rem;
+}
+
+.drawer-section {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.drawer-section-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+}
+
+.drawer-empty-copy {
+  padding: 0.35rem 0;
+  color: var(--text-ghost);
+  font-size: 11px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.collection-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.collection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  background: rgba(16, 16, 20, 0.64);
+}
+
+.collection-name {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.collection-meta {
+  margin-top: 0.15rem;
+  font-size: 10px;
+  color: var(--text-ghost);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 @media (max-width: 600px) {
@@ -1291,6 +1382,12 @@ h4 {
   .sort-btn {
     min-width: 0;
     padding: 0 0.55rem;
+  }
+
+  .filter-select-wrap,
+  .filter-select {
+    min-width: 100%;
+    width: 100%;
   }
 
   .book-item {
