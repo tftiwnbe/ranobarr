@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -29,5 +32,5 @@ jobs:
 
       - name: Run backend tests
         run: |
-          uv sync --project server --group dev
+          uv sync --project server --extra dev
           uv run --project server pytest
