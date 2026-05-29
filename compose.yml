@@ -1,0 +1,32 @@
+services:
+  ranobarr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${RANOBARR_IMAGE:-ranobarr:local}
+    restart: unless-stopped
+    ports:
+      - "${RANOBARR_PORT:-3030}:3030"
+    environment:
+      RANOBARR__AUTH__ENABLED: "${RANOBARR_AUTH_ENABLED:-true}"
+      RANOBARR__AUTH__USERNAME: "${RANOBARR_AUTH_USERNAME:-ranobarr}"
+      RANOBARR__AUTH__PASSWORD: "${RANOBARR_AUTH_PASSWORD:-change-me}"
+      RANOBARR__SCHEDULER__SCAN_INTERVAL_SECONDS: "${RANOBARR_SCAN_INTERVAL_SECONDS:-900}"
+    volumes:
+      - ./data:/data
+
+  kosync:
+    image: koreader/kosync:latest
+    profiles: ["koreader-sync"]
+    restart: unless-stopped
+    ports:
+      - "${KOSYNC_PORT:-7200}:7200"
+    volumes:
+      - kosync-app-logs:/app/koreader-sync-server/logs
+      - kosync-redis-logs:/var/log/redis
+      - kosync-redis-data:/var/lib/redis
+
+volumes:
+  kosync-app-logs:
+  kosync-redis-logs:
+  kosync-redis-data:
