@@ -183,6 +183,7 @@ class JobRuntime:
                     "branch_mode": branch_mode,
                     "selected_branch_id": selected_branch_id,
                     "formats": ["manifest", "epub"],
+                    "trigger": "automatic",
                 },
             )
 
@@ -229,6 +230,7 @@ class JobRuntime:
                         payload={
                             "slug": result.get("slug"),
                             "formats": ["manifest", "epub"],
+                            "trigger": "automatic",
                         },
                     )
             elif job.type == "build_artifact":

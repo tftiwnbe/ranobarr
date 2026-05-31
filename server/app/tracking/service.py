@@ -19,6 +19,7 @@ from app.models import (
     Book,
     BookState,
     CollectionBook,
+    AppSetting,
     ChapterContentCache,
     ChapterSnapshot,
     JobEvent,
@@ -368,6 +369,7 @@ def build_tracked_book_summary(
         created_at=book.created_at,
         updated_at=book.updated_at,
         last_checked_at=state.last_checked_at,
+        last_downloaded_at=state.last_downloaded_at,
         last_remote_chapter_key=state.last_remote_chapter_key,
     )
 
@@ -579,6 +581,7 @@ async def track_book(
             "slug": resolved.slug,
             "branch_mode": request.branch_mode,
             "selected_branch_id": request.selected_branch_id,
+            "trigger": "import",
         },
     )
 
@@ -951,6 +954,7 @@ async def update_tracked_book_branch(
             "slug": detail.slug,
             "branch_mode": track_rule.branch_mode,
             "selected_branch_id": track_rule.selected_branch_id,
+            "trigger": "manual",
         },
     )
     updated = await get_tracked_book_detail(session, book_id)

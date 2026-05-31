@@ -70,7 +70,7 @@ async def preview_tracked_book(
 
 @router.get("/books", response_model=list[TrackedBookSummary])
 async def get_tracked_books(
-    sort: str = Query(default="added", pattern="^(added|updated|title)$"),
+    sort: str = Query(default="title", pattern="^(added|updated|title)$"),
     session: AsyncSession = Depends(get_database_session),
 ) -> list[TrackedBookSummary]:
     try:
@@ -142,6 +142,7 @@ async def check_tracked_book_now(
             "slug": detail.slug,
             "branch_mode": detail.branch_mode,
             "selected_branch_id": detail.selected_branch_id,
+            "trigger": "manual",
         },
     )
     return JobEnqueueResponse(job_id=job.job_id, status=job.status)
@@ -166,6 +167,7 @@ async def build_tracked_book_now(
             "branch_mode": detail.branch_mode,
             "selected_branch_id": detail.selected_branch_id,
             "formats": request.formats,
+            "trigger": "manual",
         },
     )
     return JobEnqueueResponse(job_id=job.job_id, status=job.status)

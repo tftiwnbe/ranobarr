@@ -52,6 +52,7 @@ class BookState(SQLModel, table=True):
     last_built_chapter_key: str | None = None
     last_checked_at: Optional[datetime] = None
     last_built_at: Optional[datetime] = None
+    last_downloaded_at: Optional[datetime] = None
     last_error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -72,3 +73,11 @@ class CollectionBook(SQLModel, table=True):
     collection_id: str = Field(foreign_key="usercollection.id", index=True)
     book_id: str = Field(foreign_key="book.id", index=True)
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class AppSetting(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    key: str = Field(index=True, unique=True)
+    value_json: str
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

@@ -99,6 +99,25 @@ async def test_jobs_endpoint_empty(client) -> None:
     assert response.json() == []
 
 
+async def test_jobs_endpoint_includes_title_and_trigger(client, db) -> None:
+    book = Book(
+        slug="job-book",
+        source_url="https://ranobelib.me/ru/book/job-book",
+        title="Job Book",
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+    db.add(JobRecord(type="build_artifact", status="queued", book_id=book.id, payload_json='{"trigger":"manual"}'))
+    await db.commit()
+
+    response = await client.get("/api/v1/jobs")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["book_title"] == "Job Book"
+    assert payload[0]["trigger"] == "manual"
+
+
 async def test_artifacts_endpoint_empty(client) -> None:
     response = await client.get("/api/v1/artifacts")
     assert response.status_code == 200
@@ -609,3 +628,31 @@ async def test_library_collection_crud(client) -> None:
 
     response = await client.delete(f"/api/v1/library/collections/{collection['id']}")
     assert response.status_code == 204
+
+
+async def test_library_opds_visibility_crud(client, db) -> None:
+    book = Book(
+        slug="visibility-book",
+        source_url="https://ranobelib.me/ru/book/visibility-book",
+        title="Visibility Book",
+        genres_json='[{"name":"Fantasy","slug":"fantasy"}]',
+        tags_json='[{"name":"Academy","slug":"academy"}]',
+    )
+    db.add(book)
+    await db.commit()
+
+    response = await client.get("/api/v1/library/opds-visibility")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["genres"][0]["slug"] == "fantasy"
+    assert payload["visible_genre_slugs"] == []
+    assert payload["visible_tag_slugs"] == []
+
+    response = await client.put(
+        "/api/v1/library/opds-visibility",
+        json={"visible_genre_slugs": ["fantasy"], "visible_tag_slugs": ["academy"]},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["visible_genre_slugs"] == ["fantasy"]
+    assert payload["visible_tag_slugs"] == ["academy"]

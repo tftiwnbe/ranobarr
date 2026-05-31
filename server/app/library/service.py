@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import json
+
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.errors import TrackingError
-from app.models import CollectionBook, UserCollection
-from app.tracking.schemas import CollectionCreateRequest, CollectionSummary, CollectionUpdateRequest
+from app.models import AppSetting, CollectionBook, UserCollection
+from app.tracking.schemas import (
+    CollectionCreateRequest,
+    CollectionSummary,
+    CollectionUpdateRequest,
+    NamedTagSummary,
+    OpdsMetadataVisibilityResponse,
+    OpdsMetadataVisibilityUpdateRequest,
+)
+from app.tracking.service import deserialize_named_items, serialize_named_items
+
+OPDS_VISIBLE_GENRES_KEY = "opds_visible_genres"
+OPDS_VISIBLE_TAGS_KEY = "opds_visible_tags"
 
 
 def _slugify_collection_name(value: str) -> str:
@@ -113,3 +126,70 @@ async def delete_collection(session: AsyncSession, collection_id: str) -> bool:
     await session.delete(collection)
     await session.commit()
     return True
+
+
+async def get_opds_metadata_visibility(session: AsyncSession) -> OpdsMetadataVisibilityResponse:
+    from app.models import Book
+
+    books = (await session.exec(select(Book))).all()
+    genres_by_slug: dict[str, NamedTagSummary] = {}
+    tags_by_slug: dict[str, NamedTagSummary] = {}
+    for book in books:
+        for genre in deserialize_named_items(book.genres_json):
+            genres_by_slug.setdefault(genre.slug, genre)
+        for tag in deserialize_named_items(book.tags_json):
+            tags_by_slug.setdefault(tag.slug, tag)
+
+    visible_genres = await _read_named_setting(session, OPDS_VISIBLE_GENRES_KEY)
+    visible_tags = await _read_named_setting(session, OPDS_VISIBLE_TAGS_KEY)
+    return OpdsMetadataVisibilityResponse(
+        genres=sorted(genres_by_slug.values(), key=lambda item: item.name.lower()),
+        tags=sorted(tags_by_slug.values(), key=lambda item: item.name.lower()),
+        visible_genre_slugs=[item.slug for item in visible_genres],
+        visible_tag_slugs=[item.slug for item in visible_tags],
+    )
+
+
+async def update_opds_metadata_visibility(
+    session: AsyncSession,
+    request: OpdsMetadataVisibilityUpdateRequest,
+) -> OpdsMetadataVisibilityResponse:
+    visibility = await get_opds_metadata_visibility(session)
+    valid_genres = {item.slug: item for item in visibility.genres}
+    valid_tags = {item.slug: item for item in visibility.tags}
+
+    selected_genres = [valid_genres[slug] for slug in request.visible_genre_slugs if slug in valid_genres]
+    selected_tags = [valid_tags[slug] for slug in request.visible_tag_slugs if slug in valid_tags]
+
+    await _write_named_setting(session, OPDS_VISIBLE_GENRES_KEY, selected_genres)
+    await _write_named_setting(session, OPDS_VISIBLE_TAGS_KEY, selected_tags)
+    await session.commit()
+    return await get_opds_metadata_visibility(session)
+
+
+async def read_opds_visible_slug_sets(session: AsyncSession) -> tuple[set[str], set[str]]:
+    visible_genres = await _read_named_setting(session, OPDS_VISIBLE_GENRES_KEY)
+    visible_tags = await _read_named_setting(session, OPDS_VISIBLE_TAGS_KEY)
+    return ({item.slug for item in visible_genres}, {item.slug for item in visible_tags})
+
+
+async def _read_named_setting(session: AsyncSession, key: str) -> list[NamedTagSummary]:
+    result = await session.exec(select(AppSetting).where(AppSetting.key == key))
+    setting = result.one_or_none()
+    if setting is None:
+        return []
+    try:
+        payload = json.loads(setting.value_json)
+    except json.JSONDecodeError:
+        return []
+    return deserialize_named_items(json.dumps(payload, ensure_ascii=False))
+
+
+async def _write_named_setting(session: AsyncSession, key: str, values: list[NamedTagSummary]) -> None:
+    result = await session.exec(select(AppSetting).where(AppSetting.key == key))
+    setting = result.one_or_none()
+    if setting is None:
+        setting = AppSetting(key=key, value_json=serialize_named_items(values))
+    else:
+        setting.value_json = serialize_named_items(values)
+    session.add(setting)

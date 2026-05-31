@@ -12,6 +12,7 @@ from sqlmodel import or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.artifacts.service import latest_artifacts_for_books
+from app.library.service import read_opds_visible_slug_sets
 from app.core.titles import normalize_book_title
 from app.models import Artifact, Book, BookState, CollectionBook, UserCollection
 from app.tracking.schemas import NamedTagSummary
@@ -38,6 +39,8 @@ class OpdsBookRecord:
     book: Book
     state: BookState | None
     artifact: Artifact
+    visible_genres: list[NamedTagSummary]
+    visible_tags: list[NamedTagSummary]
 
     @property
     def updated_at(self) -> datetime:
@@ -110,12 +113,6 @@ def build_root_feed(request: Request, *, downloadable_count: int, latest_updated
             "Recently Updated",
             f"{request.url_for('opds_books_feed')}?sort=updated",
             "Newest generated books first.",
-            "acquisition",
-        ),
-        (
-            "Current",
-            str(request.url_for("opds_current_books_feed")),
-            "Your current reading focus.",
             "acquisition",
         ),
         (
@@ -238,13 +235,13 @@ def build_book_entry(request: Request, record: OpdsBookRecord) -> Element:
             f"{{{ATOM_NS}}}category",
             {"term": record.book.status.lower(), "label": record.book.status},
         )
-    for genre in _metadata_items(record.book, "genres"):
+    for genre in record.visible_genres:
         SubElement(
             entry,
             f"{{{ATOM_NS}}}category",
             {"term": f"genre:{genre.slug}", "label": genre.name},
         )
-    for tag in _metadata_items(record.book, "tags"):
+    for tag in record.visible_tags:
         SubElement(
             entry,
             f"{{{ATOM_NS}}}category",
@@ -300,6 +297,7 @@ async def list_downloadable_books(
     current_only: bool = False,
     collection_id: str | None = None,
 ) -> tuple[list[OpdsBookRecord], int]:
+    visible_genre_slugs, visible_tag_slugs = await read_opds_visible_slug_sets(session)
     latest_epub_subquery = (
         select(Artifact.book_id)
         .where(Artifact.format == "epub")
@@ -358,7 +356,13 @@ async def list_downloadable_books(
     )
 
     records = [
-        OpdsBookRecord(book=book, state=states_by_book_id.get(book.id), artifact=artifact_map[book.id])
+        OpdsBookRecord(
+            book=book,
+            state=states_by_book_id.get(book.id),
+            artifact=artifact_map[book.id],
+            visible_genres=_metadata_items(book, "genres", visible_genre_slugs),
+            visible_tags=_metadata_items(book, "tags", visible_tag_slugs),
+        )
         for book in books
         if book.id in artifact_map
     ]
@@ -388,7 +392,14 @@ async def get_downloadable_book_record(
     latest = artifact.get(book_id)
     if latest is None:
         return None
-    return OpdsBookRecord(book=book, state=state, artifact=latest)
+    visible_genre_slugs, visible_tag_slugs = await read_opds_visible_slug_sets(session)
+    return OpdsBookRecord(
+        book=book,
+        state=state,
+        artifact=latest,
+        visible_genres=_metadata_items(book, "genres", visible_genre_slugs),
+        visible_tags=_metadata_items(book, "tags", visible_tag_slugs),
+    )
 
 
 async def list_grouped_metadata(
@@ -404,7 +415,8 @@ async def list_grouped_metadata(
     )
     counts: dict[str, tuple[NamedTagSummary, set[str]]] = {}
     for record in records:
-        for item in _metadata_items(record.book, field_name):
+        items = record.visible_genres if field_name == "genres" else record.visible_tags
+        for item in items:
             current = counts.get(item.slug)
             if current is None:
                 counts[item.slug] = (item, {record.book.id})
@@ -433,7 +445,8 @@ async def list_downloadable_books_by_group(
     filtered: list[OpdsBookRecord] = []
     group_name: str | None = None
     for record in records:
-        for item in _metadata_items(record.book, field_name):
+        items = record.visible_genres if field_name == "genres" else record.visible_tags
+        for item in items:
             if item.slug == group_slug:
                 group_name = item.name
                 filtered.append(record)
@@ -497,9 +510,11 @@ def _replace_query(href: str, **params: int) -> str:
     return urlunsplit((split.scheme, split.netloc, split.path, urlencode(current), split.fragment))
 
 
-def _metadata_items(book: Book, field_name: str) -> list[NamedTagSummary]:
+def _metadata_items(book: Book, field_name: str, allowed_slugs: set[str]) -> list[NamedTagSummary]:
     if field_name == "genres":
-        return deserialize_named_items(book.opds_visible_genres_json or book.genres_json)
+        items = deserialize_named_items(book.genres_json)
+        return [item for item in items if item.slug in allowed_slugs]
     if field_name == "tags":
-        return deserialize_named_items(book.opds_visible_tags_json or book.tags_json)
+        items = deserialize_named_items(book.tags_json)
+        return [item for item in items if item.slug in allowed_slugs]
     raise ValueError(f"Unsupported metadata field: {field_name}")

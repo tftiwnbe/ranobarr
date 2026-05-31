@@ -102,6 +102,7 @@ class TrackedBookSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_checked_at: datetime | None
+    last_downloaded_at: datetime | None = None
     last_remote_chapter_key: str | None
 
 
@@ -141,3 +142,15 @@ class CollectionUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
     sort_order: int | None = None
+
+
+class OpdsMetadataVisibilityResponse(BaseModel):
+    genres: list[NamedTagSummary]
+    tags: list[NamedTagSummary]
+    visible_genre_slugs: list[str]
+    visible_tag_slugs: list[str]
+
+
+class OpdsMetadataVisibilityUpdateRequest(BaseModel):
+    visible_genre_slugs: list[str] = Field(default_factory=list)
+    visible_tag_slugs: list[str] = Field(default_factory=list)

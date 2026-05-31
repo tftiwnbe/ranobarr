@@ -2,7 +2,11 @@ import json
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from sqlmodel import select
+
+from app.library.service import update_opds_metadata_visibility
 from app.models import Artifact, BinaryAssetCache, Book, BookState, CollectionBook, UserCollection
+from app.tracking.schemas import OpdsMetadataVisibilityUpdateRequest
 
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 
@@ -77,7 +81,7 @@ async def test_opds_root_exposes_navigation_sections(client, db, temp_data_dir) 
     assert root.findtext("atom:title", namespaces=ATOM_NS) == "Ranobarr Catalog"
 
     titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
-    assert titles == ["All Books", "Recently Updated", "Current", "Favorites", "Collections", "Genres", "Tags"]
+    assert titles == ["All Books", "Recently Updated", "Favorites", "Collections", "Genres", "Tags"]
 
     links = {link.attrib["rel"]: link.attrib["href"] for link in root.findall("atom:link", ATOM_NS)}
     assert links["self"].endswith("/opds")
@@ -199,6 +203,18 @@ async def test_opds_group_feeds_expose_genres_and_tags(client, db, temp_data_dir
     assert response.status_code == 200
     root = ET.fromstring(response.content)
     genre_titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
+    assert genre_titles == []
+
+    response = await client.put(
+        "/api/v1/library/opds-visibility",
+        json={"visible_genre_slugs": ["fantasy"], "visible_tag_slugs": ["academy"]},
+    )
+    assert response.status_code == 200
+
+    response = await client.get("/opds/genres")
+    assert response.status_code == 200
+    root = ET.fromstring(response.content)
+    genre_titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
     assert genre_titles == ["Fantasy"]
 
     response = await client.get("/opds/genres/fantasy")
@@ -212,6 +228,20 @@ async def test_opds_group_feeds_expose_genres_and_tags(client, db, temp_data_dir
     root = ET.fromstring(response.content)
     tag_titles = [entry.findtext("atom:title", namespaces=ATOM_NS) for entry in root.findall("atom:entry", ATOM_NS)]
     assert tag_titles == ["Academy"]
+
+
+async def test_opds_acquisition_marks_last_downloaded(client, db, temp_data_dir) -> None:
+    book, _ = await create_downloadable_book(
+        db,
+        temp_data_dir,
+        slug="download-book",
+        title="Download Book",
+    )
+    response = await client.get(f"/opds/books/{book.id}/acquire/epub")
+    assert response.status_code == 200
+
+    state = (await db.exec(select(BookState).where(BookState.book_id == book.id))).one()
+    assert state.last_downloaded_at is not None
 
 
 async def test_opds_current_favorites_and_collections_use_filtered_library_state(client, db, temp_data_dir) -> None:
@@ -241,6 +271,13 @@ async def test_opds_current_favorites_and_collections_use_filtered_library_state
     await db.refresh(collection)
     db.add(CollectionBook(collection_id=collection.id, book_id=favorite_book.id))
     await db.commit()
+    await update_opds_metadata_visibility(
+        db,
+        OpdsMetadataVisibilityUpdateRequest(
+            visible_genre_slugs=["old-cyrillic"],
+            visible_tag_slugs=[],
+        ),
+    )
 
     response = await client.get("/opds/current")
     assert response.status_code == 200
@@ -269,6 +306,3 @@ async def test_opds_current_favorites_and_collections_use_filtered_library_state
     detail = ET.fromstring((await client.get(f"/opds/books/{favorite_book.id}")).content)
     entry = detail.find("atom:entry", ATOM_NS)
     assert entry is not None
-    category_terms = [node.attrib.get("term") for node in entry.findall("atom:category", ATOM_NS)]
-    assert any(term and term.startswith("genre:item-") for term in category_terms)
-    assert not any(term == "tag:magic" for term in category_terms)

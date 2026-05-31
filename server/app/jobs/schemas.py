@@ -8,6 +8,8 @@ class JobSummary(BaseModel):
     type: str
     status: str
     book_id: str | None
+    book_title: str | None = None
+    trigger: str | None = None
     error_message: str | None
     created_at: datetime
     started_at: datetime | None

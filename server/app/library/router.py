@@ -3,9 +3,22 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.database import get_database_session
 from app.core.errors import TrackingError
-from app.tracking.schemas import CollectionCreateRequest, CollectionSummary, CollectionUpdateRequest
+from app.tracking.schemas import (
+    CollectionCreateRequest,
+    CollectionSummary,
+    CollectionUpdateRequest,
+    OpdsMetadataVisibilityResponse,
+    OpdsMetadataVisibilityUpdateRequest,
+)
 
-from .service import create_collection, delete_collection, list_collection_summaries, update_collection
+from .service import (
+    create_collection,
+    delete_collection,
+    get_opds_metadata_visibility,
+    list_collection_summaries,
+    update_collection,
+    update_opds_metadata_visibility,
+)
 
 router = APIRouter(prefix="/api/v1/library", tags=["library"])
 
@@ -48,3 +61,18 @@ async def delete_collection_route(
 ) -> None:
     if not await delete_collection(session, collection_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
+
+
+@router.get("/opds-visibility", response_model=OpdsMetadataVisibilityResponse)
+async def get_opds_visibility(
+    session: AsyncSession = Depends(get_database_session),
+) -> OpdsMetadataVisibilityResponse:
+    return await get_opds_metadata_visibility(session)
+
+
+@router.put("/opds-visibility", response_model=OpdsMetadataVisibilityResponse)
+async def update_opds_visibility(
+    request: OpdsMetadataVisibilityUpdateRequest,
+    session: AsyncSession = Depends(get_database_session),
+) -> OpdsMetadataVisibilityResponse:
+    return await update_opds_metadata_visibility(session, request)
