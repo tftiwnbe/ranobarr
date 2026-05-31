@@ -946,47 +946,27 @@
           {:else if drawerBook}
             <div class="drawer-body">
               <div class="form-field">
-                <label for="book-branch-select" class="form-label">branch</label>
-                <Select
-                  id="book-branch-select"
-                  class="form-select"
-                  value={branchSelectValue(drawerBook)}
-                  options={branchOptions(drawerBook.branches)}
-                  placeholder="default branch"
-                  disabled={actionBookId === drawerBook.book_id || drawerBook.branches.length === 0}
-                  onValueChange={(value) => void changeBookBranch(drawerBook.book_id, value || null)}
-                />
-              </div>
-
-              <div class="toggle-row">
-                <button
-                  type="button"
-                  class="favorite-toggle"
-                  class:active={preferenceIsFavorite}
-                  aria-pressed={preferenceIsFavorite}
-                  aria-label={preferenceIsFavorite ? "Remove favorite" : "Mark favorite"}
-                  onclick={() => {
-                    preferenceIsFavorite = !preferenceIsFavorite;
-                  }}
-                >
-                  <HeartStraightIcon size={16} weight={preferenceIsFavorite ? "fill" : "regular"} />
-                </button>
-              </div>
-
-              <div class="form-field">
-                <div class="form-label">rating</div>
-                <StarPicker
-                  value={preferenceRating ? Number(preferenceRating) : 0}
-                  size={18}
-                  onChange={(value) => {
-                    preferenceRating = value > 0 ? String(value) : "";
-                  }}
-                />
-              </div>
-
-              <div class="form-field">
-                <label for="book-comment" class="form-label">comment</label>
-                <textarea id="book-comment" class="form-textarea" placeholder="private note" bind:value={preferenceComment}></textarea>
+                <div class="rating-row">
+                  <button
+                    type="button"
+                    class="favorite-toggle"
+                    class:active={preferenceIsFavorite}
+                    aria-pressed={preferenceIsFavorite}
+                    aria-label={preferenceIsFavorite ? "Remove favorite" : "Mark favorite"}
+                    onclick={() => {
+                      preferenceIsFavorite = !preferenceIsFavorite;
+                    }}
+                  >
+                    <HeartStraightIcon size={16} weight={preferenceIsFavorite ? "fill" : "regular"} />
+                  </button>
+                  <StarPicker
+                    value={preferenceRating ? Number(preferenceRating) : 0}
+                    size={18}
+                    onChange={(value) => {
+                      preferenceRating = value > 0 ? String(value) : "";
+                    }}
+                  />
+                </div>
               </div>
 
               <div class="drawer-section">
@@ -1003,6 +983,24 @@
                     </button>
                   {/each}
                 </div>
+              </div>
+
+              <div class="form-field">
+                <label for="book-comment" class="form-label">comment</label>
+                <textarea id="book-comment" class="form-textarea" placeholder="private note" bind:value={preferenceComment}></textarea>
+              </div>
+
+              <div class="form-field">
+                <label for="book-branch-select" class="form-label">branch</label>
+                <Select
+                  id="book-branch-select"
+                  class="form-select"
+                  value={branchSelectValue(drawerBook)}
+                  options={branchOptions(drawerBook.branches)}
+                  placeholder="default branch"
+                  disabled={actionBookId === drawerBook.book_id || drawerBook.branches.length === 0}
+                  onValueChange={(value) => void changeBookBranch(drawerBook.book_id, value || null)}
+                />
               </div>
 
               <div class="book-drawer-actions">
