@@ -15,9 +15,15 @@ export type CollectionSummary = {
   id: string;
   slug: string;
   name: string;
-  description: string | null;
   sort_order: number;
   book_count: number;
+};
+
+export type OpdsVisibility = {
+  genres: NamedTagSummary[];
+  tags: NamedTagSummary[];
+  visible_genre_slugs: string[];
+  visible_tag_slugs: string[];
 };
 
 export type CredentialView = {
@@ -63,6 +69,7 @@ export type TrackedBook = {
   created_at: string;
   updated_at: string;
   last_checked_at: string | null;
+  last_downloaded_at: string | null;
   last_remote_chapter_key: string | null;
 };
 
@@ -83,6 +90,8 @@ export type JobSummary = {
   type: string;
   status: string;
   book_id: string | null;
+  book_title: string | null;
+  trigger: string | null;
   error_message: string | null;
   created_at: string;
   started_at: string | null;
@@ -157,7 +166,7 @@ export async function validateCredential(): Promise<CredentialValidation> {
   });
 }
 
-export async function listTrackedBooks(sort: "added" | "updated" | "title" = "updated"): Promise<TrackedBook[]> {
+export async function listTrackedBooks(sort: "added" | "updated" | "title" = "title"): Promise<TrackedBook[]> {
   return apiFetch<TrackedBook[]>(`/api/v1/tracking/books?sort=${sort}`);
 }
 
@@ -215,7 +224,6 @@ export async function listCollections(): Promise<CollectionSummary[]> {
 
 export async function createCollection(payload: {
   name: string;
-  description?: string | null;
   sort_order?: number;
 }): Promise<CollectionSummary> {
   return apiFetch<CollectionSummary>("/api/v1/library/collections", {
@@ -227,5 +235,19 @@ export async function createCollection(payload: {
 export async function deleteCollection(collectionId: string): Promise<void> {
   await apiFetch(`/api/v1/library/collections/${collectionId}`, {
     method: "DELETE"
+  });
+}
+
+export async function getOpdsVisibility(): Promise<OpdsVisibility> {
+  return apiFetch<OpdsVisibility>("/api/v1/library/opds-visibility");
+}
+
+export async function putOpdsVisibility(payload: {
+  visible_genre_slugs: string[];
+  visible_tag_slugs: string[];
+}): Promise<OpdsVisibility> {
+  return apiFetch<OpdsVisibility>("/api/v1/library/opds-visibility", {
+    method: "PUT",
+    body: JSON.stringify(payload)
   });
 }
