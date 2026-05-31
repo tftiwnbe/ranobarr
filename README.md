@@ -10,7 +10,6 @@ Ranobarr is a self-hosted RanobeLib tracker that keeps EPUB files current and ex
 - exposes OPDS feeds for:
   - all books
   - recently updated
-  - current
   - favorites
   - collections
   - genres
@@ -99,7 +98,8 @@ uv run --project server uvicorn app.main:app --app-dir server --reload --host 12
 
 Ranobarr was informed by these public projects:
 
-- DownloadLib
-- ranobelib-downloader
-- Ranobe2ebook
+- [ivanvit100/DownloadLib](https://github.com/ivanvit100/DownloadLib)
+- [zeroma25/ranobelib-downloader](https://github.com/zeroma25/ranobelib-downloader)
+- [DustGalaxy/Ranobe2ebook](https://github.com/DustGalaxy/Ranobe2ebook)
+- [ryadik/ranobelib-parser](https://github.com/ryadik/ranobelib-parser)
 - [koreader/koreader-sync-server](https://github.com/koreader/koreader-sync-server)
