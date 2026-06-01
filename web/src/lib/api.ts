@@ -26,6 +26,27 @@ export type OpdsVisibility = {
   visible_tag_slugs: string[];
 };
 
+export type KOReaderDocument = {
+  id: string;
+  username: string;
+  document_hash: string;
+  title: string | null;
+  author: string | null;
+  progress: string | null;
+  progress_percent: number | null;
+  linked_book_id: string | null;
+  linked_book_title: string | null;
+  device: string | null;
+  device_id: string | null;
+  progress_timestamp: number | null;
+  updated_at: string;
+  created_at: string;
+};
+
+export type KOReaderState = {
+  documents: KOReaderDocument[];
+};
+
 export type CredentialView = {
   provider: string;
   has_access_token: boolean;
@@ -248,6 +269,24 @@ export async function putOpdsVisibility(payload: {
 }): Promise<OpdsVisibility> {
   return apiFetch<OpdsVisibility>("/api/v1/library/opds-visibility", {
     method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getKOReaderState(): Promise<KOReaderState> {
+  return apiFetch<KOReaderState>("/api/v1/koreader");
+}
+
+export async function updateKOReaderDocument(
+  documentId: string,
+  payload: {
+    title?: string | null;
+    author?: string | null;
+    linked_book_id?: string | null;
+  }
+): Promise<KOReaderState> {
+  return apiFetch<KOReaderState>(`/api/v1/koreader/documents/${documentId}`, {
+    method: "PATCH",
     body: JSON.stringify(payload)
   });
 }

@@ -148,14 +148,14 @@ async def test_opds_book_detail_and_epub_acquisition(client, db, temp_data_dir) 
     response = await client.get(f"/opds/books/{book.id}/acquire/epub")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/epub+zip")
-    assert "filename*=utf-8''Detail%20Book%20%287%20chapters%29.epub" in response.headers[
+    assert "filename*=utf-8''Author%20-%20Detail%20Book.epub" in response.headers[
         "content-disposition"
     ]
     assert response.content == b"Detail Book-epub"
 
     response = await client.get(f"/api/v1/artifacts/{artifact.id}/download")
     assert response.status_code == 200
-    assert "filename*=utf-8''Detail%20Book%20%287%20chapters%29.epub" in response.headers[
+    assert "filename*=utf-8''Author%20-%20Detail%20Book.epub" in response.headers[
         "content-disposition"
     ]
 

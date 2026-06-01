@@ -5,6 +5,7 @@ from .artifacts import Artifact
 from .books import AppSetting, Book, BookState, CollectionBook, TrackRule, UserCollection
 from .job_events import JobEvent
 from .jobs import JobRecord
+from .koreader import KOReaderSyncDocument, KOReaderSyncUser
 from .source_credentials import SourceCredential
 
 __all__ = [
@@ -18,6 +19,8 @@ __all__ = [
     "ChapterContentCache",
     "JobEvent",
     "JobRecord",
+    "KOReaderSyncDocument",
+    "KOReaderSyncUser",
     "SourceCredential",
     "TrackRule",
     "UserCollection",

@@ -30,17 +30,24 @@ def sanitize_filename_component(value: str, fallback: str = "book") -> str:
     return normalized[:120] or fallback
 
 
+def epub_download_filename(book: Book) -> str:
+    title = sanitize_filename_component(
+        normalize_book_title(book.title or book.slug or "book"),
+        fallback="book",
+    )
+    author = sanitize_filename_component(book.author or "Unknown", fallback="Unknown")
+    return f"{author} - {title}.epub"
+
+
 def artifact_download_filename(book: Book, artifact: Artifact) -> str:
+    if artifact.format == "epub":
+        return epub_download_filename(book)
+
     stem = sanitize_filename_component(
         normalize_book_title(book.title or book.slug or "book"),
         fallback="book",
     )
     suffix = Path(artifact.relative_path).suffix or f".{artifact.format}"
-    if artifact.format == "epub":
-        if artifact.chapter_count > 0:
-            chapter_label = "chapter" if artifact.chapter_count == 1 else "chapters"
-            return f"{stem} ({artifact.chapter_count} {chapter_label}){suffix}"
-        return f"{stem}{suffix}"
     if artifact.format == "manifest":
         return f"{stem} manifest{suffix}"
     return f"{stem}{suffix}"

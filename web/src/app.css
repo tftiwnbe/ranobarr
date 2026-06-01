@@ -427,6 +427,10 @@ h4 {
   background: rgba(26, 26, 34, 0.5);
 }
 
+.book-item--device {
+  box-shadow: inset 0 0 0 1px rgba(113, 113, 122, 0.12);
+}
+
 .book-item--last-downloaded {
   box-shadow:
     inset 0 0 0 1px rgba(199, 210, 254, 0.2),
@@ -453,6 +457,12 @@ h4 {
   color: var(--text-soft);
   font-size: 22px;
   letter-spacing: 0.04em;
+}
+
+.book-cover--device {
+  color: var(--cosmic);
+  font-size: 18px;
+  border-color: rgba(165, 180, 252, 0.18);
 }
 
 .book-main {
@@ -525,6 +535,10 @@ h4 {
 .book-chip--live {
   color: var(--cosmic);
   border-color: rgba(165, 180, 252, 0.18);
+}
+
+.book-chip--device {
+  color: var(--text-soft);
 }
 
 .book-chip-muted {
@@ -850,6 +864,37 @@ h4 {
 
 .collection-delete-btn {
   min-width: 5rem;
+}
+
+.device-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.device-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  background: rgba(16, 16, 20, 0.64);
+}
+
+.device-row-button {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.device-side {
+  text-align: right;
+}
+
+.device-progress {
+  color: var(--text);
+  font-size: 12px;
 }
 
 .auth-user-copy {

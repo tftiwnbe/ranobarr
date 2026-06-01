@@ -17,6 +17,8 @@ from app.core.jobs import job_runtime
 from app.core.logging import configure_logging
 from app.core.security import ensure_request_authorized, is_auth_enabled
 from app.jobs.router import router as jobs_router
+from app.koreader.router import app_router as koreader_app_router
+from app.koreader.router import router as koreader_router
 from app.library.router import router as library_router
 from app.opds.router import router as opds_router
 from app.source_auth.router import router as source_auth_router
@@ -61,12 +63,21 @@ _SECURITY_HEADERS = {
     "Permissions-Policy": "geolocation=(), microphone=()",
 }
 
+KO_READER_AUTH_EXEMPT_PATHS = {
+    "/healthcheck",
+    "/users/create",
+    "/users/auth",
+    "/syncs/progress",
+}
+
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next: Callable) -> Response:
     started = time.perf_counter()
     try:
-        if request.url.path != "/health":
+        path = request.url.path
+        skip_global_auth = path == "/health" or path in KO_READER_AUTH_EXEMPT_PATHS or path.startswith("/syncs/progress/")
+        if not skip_global_auth:
             ensure_request_authorized(request)
         response = await call_next(request)
     except HTTPException as exc:
@@ -87,6 +98,8 @@ async def add_security_headers(request: Request, call_next: Callable) -> Respons
 
 
 app.include_router(system_router)
+app.include_router(koreader_router)
+app.include_router(koreader_app_router)
 app.include_router(artifacts_router)
 app.include_router(jobs_router)
 app.include_router(library_router)

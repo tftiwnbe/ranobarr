@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -7,14 +8,14 @@ from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
 from app.config import get_settings
-from app.models import Artifact, BinaryAssetCache, Book, BookState, ChapterContentCache, ChapterSnapshot, JobEvent, JobRecord, SourceCredential, TrackRule  # noqa: F401
+import app.models  # noqa: F401
 
 config = context.config
 
 if not config.get_main_option("sqlalchemy.url"):
     config.set_main_option("sqlalchemy.url", get_settings().app.database_url)
 
-if config.config_file_name is not None:
+if config.config_file_name is not None and not logging.getLogger().handlers:
     fileConfig(config.config_file_name)
 
 target_metadata = SQLModel.metadata

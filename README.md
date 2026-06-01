@@ -15,6 +15,7 @@ Ranobarr is a self-hosted RanobeLib tracker that keeps EPUB files current and ex
   - genres
   - tags
 - supports optional HTTP Basic auth across the web UI, API, and OPDS
+- implements a KOReader-compatible progress sync server directly in the app
 - stores everything locally in SQLite and `/data`
 
 ## Quick start
@@ -38,22 +39,35 @@ Open:
 
 If auth is enabled, your reader and browser should use the same Basic auth credentials from `.env`.
 
-## Optional KOReader Sync sidecar
+## KOReader sync
 
-Ranobarr does not reimplement the KOReader sync protocol. The reliable way to support KOReader progress sync is to run the official sync server beside it.
+Ranobarr now exposes KOReader-compatible sync endpoints directly, so devices like the Xteink X4 can push and pull reading progress over HTTP(S).
 
-Start it only when you need it:
+There is no separate `kosync` sidecar anymore. Point KOReader at the Ranobarr app itself.
 
-```bash
-docker compose --profile koreader-sync up -d
-```
+In the web app:
 
-Default KOReader Sync endpoint:
+- open `koreader sync`
+- point KOReader or CrossPoint at this app as the custom sync server
+- create or log into the same KOReader sync account on the device
+- refresh the drawer to inspect synced documents and label unknown hashes
 
-- `https://localhost:7200`
+Ranobarr accepts the official KOReader sync protocol routes:
 
-The official KOReader sync server ships with its own HTTPS listener and self-signed certificate, and documents Docker and Compose-based self-hosting directly in its repository. Sources:
-- [koreader/koreader-sync-server](https://github.com/koreader/koreader-sync-server)
+- `POST /users/create`
+- `GET /users/auth`
+- `PUT /syncs/progress`
+- `GET /syncs/progress/:document`
+- `GET /healthcheck`
+
+Current behavior:
+
+- stores KOReader sync users and per-document progress in SQLite
+- automatically links synced documents to tracked Ranobarr titles when the KOReader document hash matches a built EPUB artifact
+- lets you assign a title/author and optionally link unknown synced document hashes in the app UI
+- still cannot infer a sideloaded title automatically from the KOReader sync protocol alone, because the protocol sends a document hash and progress metadata, not filenames or book titles
+
+If app-wide Basic auth is enabled, the normal web UI and `/api/*` routes still use it. The KOReader protocol routes use KOReader’s own `x-auth-user` / `x-auth-key` authentication flow for compatibility with devices.
 
 ## Data and logs
 

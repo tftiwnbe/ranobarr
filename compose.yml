@@ -14,19 +14,3 @@ services:
       RANOBARR__SCHEDULER__SCAN_INTERVAL_SECONDS: "${RANOBARR_SCAN_INTERVAL_SECONDS:-900}"
     volumes:
       - ./data:/data
-
-  kosync:
-    image: koreader/kosync:latest
-    profiles: ["koreader-sync"]
-    restart: unless-stopped
-    ports:
-      - "${KOSYNC_PORT:-7200}:7200"
-    volumes:
-      - kosync-app-logs:/app/koreader-sync-server/logs
-      - kosync-redis-logs:/var/log/redis
-      - kosync-redis-data:/var/lib/redis
-
-volumes:
-  kosync-app-logs:
-  kosync-redis-logs:
-  kosync-redis-data:

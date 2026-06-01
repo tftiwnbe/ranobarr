@@ -1,3 +1,5 @@
+import hashlib
+
 from sqlmodel import select
 
 from app.core.titles import normalize_book_title
@@ -10,6 +12,7 @@ from app.models import (
     CollectionBook,
     JobEvent,
     JobRecord,
+    KOReaderSyncDocument,
     TrackRule,
     UserCollection,
 )
@@ -225,6 +228,238 @@ async def test_latest_artifact_endpoint_returns_newest_match(client, db) -> None
     response = await client.get(f"/api/v1/artifacts/books/{book.id}/latest?format=epub")
     assert response.status_code == 200
     assert response.json()["relative_path"] == "artifacts/new.epub"
+
+
+async def test_koreader_protocol_sync_links_matching_artifact(client, db, temp_data_dir) -> None:
+    tracked = Book(
+        slug="example-title",
+        source_url="https://ranobelib.me/ru/book/example-title",
+        title="Example Title",
+    )
+    db.add(tracked)
+    await db.commit()
+    await db.refresh(tracked)
+
+    artifact_bytes = b"example-epub-binary"
+    artifact_hash = hashlib.md5(artifact_bytes).hexdigest()
+    artifact_path = temp_data_dir / "artifacts" / tracked.id / "book.epub"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(artifact_bytes)
+    db.add(
+        Artifact(
+            book_id=tracked.id,
+            format="epub",
+            relative_path=str(artifact_path.relative_to(temp_data_dir)),
+            chapter_count=12,
+            file_size_bytes=len(artifact_bytes),
+        )
+    )
+    await db.commit()
+
+    response = await client.post("/users/create", json={"username": "reader1", "password": "md5pass"})
+    assert response.status_code == 201
+    assert response.json() == {"username": "reader1"}
+
+    response = await client.get("/users/auth", headers={"x-auth-user": "reader1", "x-auth-key": "md5pass"})
+    assert response.status_code == 200
+    assert response.json() == {"authorized": "OK"}
+
+    response = await client.put(
+        "/syncs/progress",
+        headers={"x-auth-user": "reader1", "x-auth-key": "md5pass"},
+        json={
+            "document": artifact_hash,
+            "progress": "chapter-29",
+            "percentage": 0.42,
+            "device": "xteink x4",
+            "device_id": "device-1",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["document"] == artifact_hash
+    assert payload["timestamp"] > 0
+
+    response = await client.get(
+        f"/syncs/progress/{artifact_hash}",
+        headers={"x-auth-user": "reader1", "x-auth-key": "md5pass"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["document"] == artifact_hash
+    assert payload["percentage"] == 0.42
+    assert payload["progress"] == "chapter-29"
+    assert payload["device"] == "xteink x4"
+    assert payload["device_id"] == "device-1"
+
+    response = await client.get("/api/v1/koreader")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["documents"]) == 1
+    assert payload["documents"][0]["linked_book_id"] == tracked.id
+    assert payload["documents"][0]["linked_book_title"] == "Example Title"
+
+
+async def test_koreader_protocol_sync_links_matching_filename_hash(client, db) -> None:
+    tracked = Book(
+        slug="filename-title",
+        source_url="https://ranobelib.me/ru/book/filename-title",
+        title="Filename Title",
+        author="Filename Author",
+    )
+    db.add(tracked)
+    await db.commit()
+    await db.refresh(tracked)
+
+    filename_hash = hashlib.md5("Filename Author - Filename Title.epub".encode("utf-8")).hexdigest()
+
+    response = await client.post("/users/create", json={"username": "reader-filename", "password": "md5pass"})
+    assert response.status_code == 201
+
+    response = await client.put(
+        "/syncs/progress",
+        headers={"x-auth-user": "reader-filename", "x-auth-key": "md5pass"},
+        json={
+            "document": filename_hash,
+            "progress": "chapter-8",
+            "percentage": 0.8,
+            "device": "xteink x4",
+        },
+    )
+    assert response.status_code == 200
+
+    response = await client.get("/api/v1/koreader")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["documents"]) == 1
+    assert payload["documents"][0]["linked_book_id"] == tracked.id
+    assert payload["documents"][0]["linked_book_title"] == "Filename Title"
+
+
+async def test_koreader_document_can_be_labeled_in_app(client, db) -> None:
+    response = await client.post("/users/create", json={"username": "reader2", "password": "md5pass"})
+    assert response.status_code == 201
+
+    response = await client.put(
+        "/syncs/progress",
+        headers={"x-auth-user": "reader2", "x-auth-key": "md5pass"},
+        json={
+            "document": "abcdef1234567890abcdef1234567890",
+            "progress": "position-15",
+            "percentage": 0.15,
+            "device": "xteink x4",
+        },
+    )
+    assert response.status_code == 200
+
+    response = await client.get("/api/v1/koreader")
+    assert response.status_code == 200
+    document_id = response.json()["documents"][0]["id"]
+
+    response = await client.patch(
+        f"/api/v1/koreader/documents/{document_id}",
+        json={"title": "Manual Device Book", "author": "Side Loaded"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["documents"][0]["title"] == "Manual Device Book"
+    assert payload["documents"][0]["author"] == "Side Loaded"
+
+    result = await db.exec(select(KOReaderSyncDocument))
+    document = result.one()
+    assert document.title == "Manual Device Book"
+
+
+async def test_koreader_document_can_be_unlinked_and_cleared_in_app(client, db) -> None:
+    tracked = Book(
+        slug="linked-title",
+        source_url="https://ranobelib.me/ru/book/linked-title",
+        title="Linked Title",
+        author="Tracked Author",
+    )
+    db.add(tracked)
+    await db.commit()
+    await db.refresh(tracked)
+
+    response = await client.post("/users/create", json={"username": "reader4", "password": "md5pass"})
+    assert response.status_code == 201
+
+    response = await client.put(
+        "/syncs/progress",
+        headers={"x-auth-user": "reader4", "x-auth-key": "md5pass"},
+        json={
+            "document": "11111111111111111111111111111111",
+            "progress": "position-25",
+            "percentage": 0.25,
+            "device": "xteink x4",
+        },
+    )
+    assert response.status_code == 200
+
+    response = await client.get("/api/v1/koreader")
+    assert response.status_code == 200
+    document_id = response.json()["documents"][0]["id"]
+
+    response = await client.patch(
+        f"/api/v1/koreader/documents/{document_id}",
+        json={"linked_book_id": tracked.id, "title": None, "author": None},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["documents"][0]["linked_book_id"] == tracked.id
+    assert payload["documents"][0]["title"] == "Linked Title"
+    assert payload["documents"][0]["author"] == "Tracked Author"
+
+    response = await client.patch(
+        f"/api/v1/koreader/documents/{document_id}",
+        json={"linked_book_id": None, "title": None, "author": None},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["documents"][0]["linked_book_id"] is None
+    assert payload["documents"][0]["title"] is None
+    assert payload["documents"][0]["author"] is None
+
+    document = await db.get(KOReaderSyncDocument, document_id)
+    assert document is not None
+    assert document.linked_book_id is None
+    assert document.title is None
+    assert document.author is None
+
+async def test_koreader_missing_document_returns_empty_payload(client) -> None:
+    response = await client.post("/users/create", json={"username": "reader3", "password": "md5pass"})
+    assert response.status_code == 201
+
+    response = await client.get(
+        "/syncs/progress/missingdoc",
+        headers={"x-auth-user": "reader3", "x-auth-key": "md5pass"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
+async def test_koreader_auth_accepts_app_auth_bridge(client, db, monkeypatch) -> None:
+    settings = __import__("app.config", fromlist=["get_settings"]).get_settings()
+    original_enabled = settings.auth.enabled
+    original_username = settings.auth.username
+    original_password = settings.auth.password
+
+    settings.auth.enabled = True
+    settings.auth.username = "wnbe"
+    settings.auth.password = "Everything13"
+
+    try:
+        md5_password = hashlib.md5("Everything13".encode("utf-8")).hexdigest()
+        response = await client.get(
+            "/users/auth",
+            headers={"x-auth-user": "wnbe", "x-auth-key": md5_password},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"authorized": "OK"}
+    finally:
+        settings.auth.enabled = original_enabled
+        settings.auth.username = original_username
+        settings.auth.password = original_password
 
 
 async def test_delete_artifact_endpoint_removes_row_and_file(client, db, temp_data_dir) -> None:

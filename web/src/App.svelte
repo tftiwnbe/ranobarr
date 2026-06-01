@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import {
+    ArrowsClockwiseIcon,
     BooksIcon,
     ClockCounterClockwiseIcon,
     FunnelSimpleIcon,
@@ -23,6 +24,7 @@
     deleteCollection,
     deleteTrackedBook,
     getCredential,
+    getKOReaderState,
     getOpdsVisibility,
     latestArtifact,
     listCollections,
@@ -33,6 +35,7 @@
     putOpdsVisibility,
     triggerCheck,
     updateBookPreferences,
+    updateKOReaderDocument,
     updateTrackedBookBranch,
     validateCredential,
     type ArtifactSummary,
@@ -41,6 +44,8 @@
     type CredentialValidation,
     type CredentialView,
     type JobSummary,
+    type KOReaderDocument,
+    type KOReaderState,
     type NamedTagSummary,
     type OpdsVisibility,
     type PreviewBook,
@@ -48,12 +53,40 @@
   } from "./lib/api";
 
   type BookCard = TrackedBook & { latestArtifact: ArtifactSummary | null };
-  type DrawerTab = "track" | "auth" | "jobs" | "library" | "metadata" | "book";
+  type ManualKOReaderEntry = {
+    kind: "koreader";
+    id: string;
+    title: string;
+    author: string | null;
+    created_at: string;
+    updated_at: string;
+    document: KOReaderDocument;
+  };
+  type TrackedLibraryEntry = {
+    kind: "tracked";
+    id: string;
+    title: string;
+    author: string | null;
+    created_at: string;
+    updated_at: string;
+    book: BookCard;
+  };
+  type LibraryEntry = ManualKOReaderEntry | TrackedLibraryEntry;
+  type DrawerTab =
+    | "track"
+    | "auth"
+    | "jobs"
+    | "library"
+    | "metadata"
+    | "device"
+    | "book"
+    | "koreader-document";
 
   let books = $state<BookCard[]>([]);
   let jobs = $state<JobSummary[]>([]);
   let collections = $state<CollectionSummary[]>([]);
   let opdsVisibility = $state<OpdsVisibility | null>(null);
+  let koreaderState = $state<KOReaderState | null>(null);
   let credential = $state<CredentialView | null>(null);
   let validation = $state<CredentialValidation | null>(null);
 
@@ -65,6 +98,7 @@
   let savingPreferences = $state(false);
   let savingCollection = $state(false);
   let savingOpdsVisibility = $state(false);
+  let savingKoreaderDocument = $state(false);
 
   let accessToken = $state("");
   let refreshToken = $state("");
@@ -77,6 +111,7 @@
   let drawerClosing = $state(false);
   let drawerTab = $state<DrawerTab>("track");
   let drawerBookId = $state<string | null>(null);
+  let drawerKOReaderDocumentId = $state<string | null>(null);
   let searchQuery = $state("");
   let sortMode = $state<"title" | "updated" | "added">("title");
   let filterOpen = $state(false);
@@ -90,19 +125,68 @@
   let pendingVisibleGenreSlugs = $state<string[]>([]);
   let pendingVisibleTagSlugs = $state<string[]>([]);
   let collectionDeleteCandidate = $state<CollectionSummary | null>(null);
+  let selectedKOReaderDocumentId = $state<string | null>(null);
+  let koreaderDocumentTitle = $state("");
+  let koreaderDocumentAuthor = $state("");
+  let koreaderLinkedBookId = $state("");
 
-  const runningJobs = $derived(jobs.filter((job) => job.status === "running").length);
-  const failedJobs = $derived(jobs.filter((job) => job.status === "failed").length);
-  const favoriteCount = $derived(books.filter((book) => book.is_favorite).length);
-  const drawerBook = $derived(drawerBookId ? books.find((book) => book.book_id === drawerBookId) ?? null : null);
+  const runningJobs = $derived(
+    jobs.filter((job) => job.status === "running").length,
+  );
+  const failedJobs = $derived(
+    jobs.filter((job) => job.status === "failed").length,
+  );
+  const favoriteCount = $derived(
+    books.filter((book) => book.is_favorite).length,
+  );
+  const manualKOReaderDocuments = $derived(
+    (koreaderState?.documents ?? []).filter((item) => !item.linked_book_id),
+  );
+  const linkedDeviceProgressByBook = $derived.by(() => {
+    const values = new Map<string, number>();
+    for (const item of koreaderState?.documents ?? []) {
+      if (!item.linked_book_id || item.progress_percent === null) continue;
+      const current = values.get(item.linked_book_id);
+      if (current === undefined || item.progress_percent > current) {
+        values.set(item.linked_book_id, item.progress_percent);
+      }
+    }
+    return values;
+  });
+  const selectedKOReaderDocument = $derived(
+    selectedKOReaderDocumentId
+      ? (koreaderState?.documents.find(
+          (item) => item.id === selectedKOReaderDocumentId,
+        ) ?? null)
+      : null,
+  );
+  const drawerBook = $derived(
+    drawerBookId
+      ? (books.find((book) => book.book_id === drawerBookId) ?? null)
+      : null,
+  );
+  const drawerKOReaderDocument = $derived(
+    drawerKOReaderDocumentId
+      ? (koreaderState?.documents.find(
+          (item) => item.id === drawerKOReaderDocumentId,
+        ) ?? null)
+      : null,
+  );
+  const activeKOReaderDocument = $derived(
+    drawerKOReaderDocument ?? selectedKOReaderDocument,
+  );
   const syncStateByBook = $derived.by(() => {
     const states = new Map<string, "running" | "queued">();
     for (const job of jobs) {
       if (!job.book_id) continue;
-      if (job.type !== "check_updates" && job.type !== "build_artifact") continue;
+      if (job.type !== "check_updates" && job.type !== "build_artifact")
+        continue;
       if (job.status !== "running" && job.status !== "queued") continue;
       if (!states.has(job.book_id)) {
-        states.set(job.book_id, job.status === "running" ? "running" : "queued");
+        states.set(
+          job.book_id,
+          job.status === "running" ? "running" : "queued",
+        );
       }
     }
     return states;
@@ -117,28 +201,67 @@
       );
     return recent[0]?.book_id ?? null;
   });
-  const filteredBooks = $derived.by(() => {
-    let result = books.slice();
+  const totalTitleCount = $derived(
+    books.length + manualKOReaderDocuments.length,
+  );
+  const filteredLibraryEntries = $derived.by(() => {
+    let result: LibraryEntry[] = [
+      ...books.map((book) => ({
+        kind: "tracked" as const,
+        id: book.book_id,
+        title: book.title,
+        author: book.author,
+        created_at: book.created_at,
+        updated_at: book.updated_at,
+        book,
+      })),
+      ...manualKOReaderDocuments.map((document) => ({
+        kind: "koreader" as const,
+        id: document.id,
+        title:
+          document.title ??
+          document.linked_book_title ??
+          `document ${document.document_hash.slice(0, 8)}`,
+        author: document.author,
+        created_at: document.created_at,
+        updated_at: document.updated_at,
+        document,
+      })),
+    ];
     const query = searchQuery.trim().toLowerCase();
     if (query) {
       result = result.filter(
-        (book) =>
-          book.title.toLowerCase().includes(query) ||
-          (book.author ?? "").toLowerCase().includes(query),
+        (entry) =>
+          entry.title.toLowerCase().includes(query) ||
+          (entry.author ?? "").toLowerCase().includes(query),
       );
     }
     if (filterFavorites) {
-      result = result.filter((book) => book.is_favorite);
+      result = result.filter(
+        (entry) => entry.kind === "tracked" && entry.book.is_favorite,
+      );
     }
     if (filterCollectionId) {
-      result = result.filter((book) => book.collections.some((collection) => collection.id === filterCollectionId));
+      result = result.filter(
+        (entry) =>
+          entry.kind === "tracked" &&
+          entry.book.collections.some(
+            (collection) => collection.id === filterCollectionId,
+          ),
+      );
     }
     result.sort((left, right) => {
       if (sortMode === "updated") {
-        return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
+        return (
+          new Date(right.updated_at).getTime() -
+          new Date(left.updated_at).getTime()
+        );
       }
       if (sortMode === "added") {
-        return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+        return (
+          new Date(right.created_at).getTime() -
+          new Date(left.created_at).getTime()
+        );
       }
       return left.title.localeCompare(right.title);
     });
@@ -148,12 +271,20 @@
   async function loadDashboard() {
     loading = true;
     try {
-      const [storedCredential, recentJobs, trackedBooks, libraryCollections, visibility] = await Promise.all([
+      const [
+        storedCredential,
+        recentJobs,
+        trackedBooks,
+        libraryCollections,
+        visibility,
+        deviceState,
+      ] = await Promise.all([
         getCredential(),
         listJobs(),
         listTrackedBooks("title"),
         listCollections(),
         getOpdsVisibility(),
+        getKOReaderState(),
       ]);
       credential = storedCredential;
       accessToken = "";
@@ -164,7 +295,9 @@
           artifact: await latestArtifact(book.book_id),
         })),
       );
-      const artifactMap = new Map(artifactPairs.map((entry) => [entry.bookId, entry.artifact]));
+      const artifactMap = new Map(
+        artifactPairs.map((entry) => [entry.bookId, entry.artifact]),
+      );
       books = trackedBooks.map((book) => ({
         ...book,
         latestArtifact: artifactMap.get(book.book_id) ?? null,
@@ -172,10 +305,13 @@
       jobs = recentJobs.slice(0, 20);
       collections = libraryCollections;
       opdsVisibility = visibility;
+      koreaderState = deviceState;
       pendingVisibleGenreSlugs = [...visibility.visible_genre_slugs];
       pendingVisibleTagSlugs = [...visibility.visible_tag_slugs];
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to load dashboard");
+      toast.error(
+        error instanceof Error ? error.message : "failed to load dashboard",
+      );
     } finally {
       loading = false;
     }
@@ -194,7 +330,9 @@
       selectedBranchId = "";
     } catch (error) {
       clearPreview();
-      toast.error(error instanceof Error ? error.message : "failed to inspect title");
+      toast.error(
+        error instanceof Error ? error.message : "failed to inspect title",
+      );
     } finally {
       previewing = false;
     }
@@ -218,7 +356,9 @@
       toast.success("title queued for sync and epub build");
       await loadDashboard();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to track title");
+      toast.error(
+        error instanceof Error ? error.message : "failed to track title",
+      );
     } finally {
       submitting = false;
     }
@@ -233,7 +373,9 @@
       });
       toast.success("stored ranobelib credentials");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to store credentials");
+      toast.error(
+        error instanceof Error ? error.message : "failed to store credentials",
+      );
     } finally {
       submitting = false;
     }
@@ -249,7 +391,11 @@
         toast.warning(validation.error ?? "credential check failed");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to validate credentials");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "failed to validate credentials",
+      );
     } finally {
       validating = false;
     }
@@ -262,7 +408,9 @@
       toast.success("queued sync and rebuild");
       await loadDashboard();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to sync title");
+      toast.error(
+        error instanceof Error ? error.message : "failed to sync title",
+      );
     } finally {
       actionBookId = null;
     }
@@ -275,7 +423,9 @@
       toast.success("queued branch sync");
       await loadDashboard();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to update branch");
+      toast.error(
+        error instanceof Error ? error.message : "failed to update branch",
+      );
     } finally {
       actionBookId = null;
     }
@@ -289,7 +439,9 @@
       toast.success("title removed");
       await loadDashboard();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to delete title");
+      toast.error(
+        error instanceof Error ? error.message : "failed to delete title",
+      );
     } finally {
       actionBookId = null;
     }
@@ -308,7 +460,11 @@
       toast.success("saved title preferences");
       await loadDashboard();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to save title preferences");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "failed to save title preferences",
+      );
     } finally {
       savingPreferences = false;
     }
@@ -323,7 +479,9 @@
       toast.success("collection created");
       await loadDashboard();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to create collection");
+      toast.error(
+        error instanceof Error ? error.message : "failed to create collection",
+      );
     } finally {
       savingCollection = false;
     }
@@ -337,7 +495,9 @@
       toast.success("collection removed");
       await loadDashboard();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to delete collection");
+      toast.error(
+        error instanceof Error ? error.message : "failed to delete collection",
+      );
     }
   }
 
@@ -350,17 +510,44 @@
       });
       toast.success("saved opds metadata visibility");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to save opds visibility");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "failed to save opds visibility",
+      );
     } finally {
       savingOpdsVisibility = false;
     }
   }
 
-  function artifactUrl(book: BookCard): string | null {
-    return book.latestArtifact ? `/api/v1/artifacts/${book.latestArtifact.id}/download` : null;
+  async function saveKOReaderDocument() {
+    if (!activeKOReaderDocument) return;
+    savingKoreaderDocument = true;
+    try {
+      koreaderState = await updateKOReaderDocument(activeKOReaderDocument.id, {
+        title: koreaderDocumentTitle.trim() || null,
+        author: koreaderDocumentAuthor.trim() || null,
+        linked_book_id: koreaderLinkedBookId || null,
+      });
+      toast.success("saved synced title metadata");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "failed to save synced title",
+      );
+    } finally {
+      savingKoreaderDocument = false;
+    }
   }
 
-  function coverUrl(book: Pick<BookCard, "book_id" | "cover_url">): string | null {
+  function artifactUrl(book: BookCard): string | null {
+    return book.latestArtifact
+      ? `/api/v1/artifacts/${book.latestArtifact.id}/download`
+      : null;
+  }
+
+  function coverUrl(
+    book: Pick<BookCard, "book_id" | "cover_url">,
+  ): string | null {
     return book.cover_url ? `/opds/books/${book.book_id}/cover` : null;
   }
 
@@ -373,13 +560,26 @@
     if (diffMin < 60) return `${diffMin}m ago`;
     const diffHours = Math.floor(diffMin / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
   }
 
   function formatBytes(value: number): string {
     if (value < 1024) return `${value} b`;
     if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} kb`;
     return `${(value / (1024 * 1024)).toFixed(1)} mb`;
+  }
+
+  function formatPercent(value: number | null): string {
+    if (value === null) return "no progress";
+    return `${Math.round(value)}%`;
+  }
+
+  function formatTimestamp(value: number | null): string {
+    if (value === null) return "never";
+    return formatDate(new Date(value * 1000).toISOString());
   }
 
   function openDrawer(tab: DrawerTab) {
@@ -397,6 +597,12 @@
     openDrawer("book");
   }
 
+  function openKOReaderDocumentDrawer(documentId: string) {
+    drawerKOReaderDocumentId = documentId;
+    selectedKOReaderDocumentId = documentId;
+    openDrawer("koreader-document");
+  }
+
   function closeDrawer() {
     if (!drawerOpen || drawerClosing) return;
     drawerClosing = true;
@@ -406,6 +612,9 @@
       if (drawerTab === "book") {
         drawerBookId = null;
       }
+      if (drawerTab === "koreader-document") {
+        drawerKOReaderDocumentId = null;
+      }
       drawerCloseTimer = null;
     }, 300);
   }
@@ -413,7 +622,10 @@
   function branchOptions(branches: BranchSummary[]): SelectOption[] {
     return [
       { value: "", label: "default branch" },
-      ...branches.map((branch) => ({ value: branch.id, label: branch.display })),
+      ...branches.map((branch) => ({
+        value: branch.id,
+        label: branch.display,
+      })),
     ];
   }
 
@@ -424,8 +636,17 @@
     ];
   }
 
-  function branchSelectValue(book: Pick<BookCard, "selected_branch_id">): string {
+  function branchSelectValue(
+    book: Pick<BookCard, "selected_branch_id">,
+  ): string {
     return book.selected_branch_id ?? "";
+  }
+
+  function koreaderLinkOptions(items: BookCard[]): SelectOption[] {
+    return [
+      { value: "", label: "unlinked" },
+      ...items.map((item) => ({ value: item.book_id, label: item.title })),
+    ];
   }
 
   function bookSyncLabel(bookId: string): string | null {
@@ -439,27 +660,44 @@
   }
 
   function toggleSlugValue(values: string[], slug: string) {
-    return values.includes(slug) ? values.filter((value) => value !== slug) : [...values, slug];
+    return values.includes(slug)
+      ? values.filter((value) => value !== slug)
+      : [...values, slug];
   }
 
   function toggleNamedValue(kind: "genre" | "tag", item: NamedTagSummary) {
     if (kind === "genre") {
-      pendingVisibleGenreSlugs = toggleSlugValue(pendingVisibleGenreSlugs, item.slug);
+      pendingVisibleGenreSlugs = toggleSlugValue(
+        pendingVisibleGenreSlugs,
+        item.slug,
+      );
       return;
     }
     pendingVisibleTagSlugs = toggleSlugValue(pendingVisibleTagSlugs, item.slug);
   }
 
   function toggleCollectionValue(collectionId: string) {
-    preferenceCollectionIds = toggleSlugValue(preferenceCollectionIds, collectionId);
+    preferenceCollectionIds = toggleSlugValue(
+      preferenceCollectionIds,
+      collectionId,
+    );
   }
 
   function syncDrawerBookPreferences(book: BookCard | null) {
     if (!book) return;
-    preferenceCollectionIds = book.collections.map((collection) => collection.id);
+    preferenceCollectionIds = book.collections.map(
+      (collection) => collection.id,
+    );
     preferenceIsFavorite = book.is_favorite;
     preferenceRating = book.rating ? String(book.rating) : "";
     preferenceComment = book.comment ?? "";
+  }
+
+  function syncKOReaderDocumentForm(document: KOReaderDocument | null) {
+    if (!document) return;
+    koreaderDocumentTitle = document.title ?? "";
+    koreaderDocumentAuthor = document.author ?? "";
+    koreaderLinkedBookId = document.linked_book_id ?? "";
   }
 
   function jobTypeLabel(type: string): string {
@@ -479,6 +717,9 @@
   $effect(() => {
     syncDrawerBookPreferences(drawerBook);
   });
+  $effect(() => {
+    syncKOReaderDocumentForm(activeKOReaderDocument);
+  });
   onDestroy(() => {
     if (drawerCloseTimer) clearTimeout(drawerCloseTimer);
   });
@@ -486,8 +727,14 @@
 
 <svelte:head>
   <title>ranobarr</title>
-  <meta name="description" content="Track RanobeLib titles and build EPUB artifacts." />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta
+    name="description"
+    content="Track RanobeLib titles and build EPUB artifacts."
+  />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
 </svelte:head>
 
 <div class="page-shell">
@@ -520,7 +767,7 @@
         </div>
       {/if}
       <div class="stat-pill">
-        <span class="stat-pill-value">{books.length}</span>
+        <span class="stat-pill-value">{totalTitleCount}</span>
         <span>titles</span>
       </div>
     </div>
@@ -530,17 +777,44 @@
     <div class="toolbar">
       <div class="search-wrap">
         <span class="search-icon">⌕</span>
-        <input class="search-input" type="search" placeholder="search titles..." bind:value={searchQuery} />
+        <input
+          class="search-input"
+          type="search"
+          placeholder="search titles..."
+          bind:value={searchQuery}
+        />
       </div>
 
-      <button type="button" class="sort-btn" class:active={sortMode === "title"} onclick={() => setSort("title")}>
+      <button
+        type="button"
+        class="sort-btn"
+        class:active={sortMode === "title"}
+        onclick={() => setSort("title")}
+      >
         title
       </button>
-      <button type="button" class="sort-btn" class:active={sortMode === "updated"} onclick={() => setSort("updated")}>
+      <button
+        type="button"
+        class="sort-btn"
+        class:active={sortMode === "updated"}
+        onclick={() => setSort("updated")}
+      >
         updated
       </button>
-      <button type="button" class="sort-btn" class:active={sortMode === "added"} onclick={() => setSort("added")}>
+      <button
+        type="button"
+        class="sort-btn"
+        class:active={sortMode === "added"}
+        onclick={() => setSort("added")}
+      >
         added
+      </button>
+      <button
+        type="button"
+        class="sort-btn"
+        onclick={() => openDrawer("device")}
+      >
+        device
       </button>
       <button
         type="button"
@@ -596,13 +870,16 @@
 
     {#if !loading && (searchQuery || filterFavorites || filterCollectionId)}
       <div class="results-count">
-        {filteredBooks.length} of {books.length} title{books.length !== 1 ? "s" : ""}
+        {filteredLibraryEntries.length} of {totalTitleCount} title{totalTitleCount !==
+        1
+          ? "s"
+          : ""}
       </div>
     {/if}
 
     {#if loading}
       <div class="empty-state">loading...</div>
-    {:else if books.length === 0}
+    {:else if totalTitleCount === 0}
       <div class="empty-state">
         no titles tracked yet —
         <button
@@ -613,72 +890,143 @@
           add one
         </button>
       </div>
-    {:else if filteredBooks.length === 0}
+    {:else if filteredLibraryEntries.length === 0}
       <div class="empty-state">no titles match filters</div>
     {:else}
       <div class="book-list">
-        {#each filteredBooks as book (book.book_id)}
-          <div
-            class="book-item"
-            class:book-item--last-downloaded={lastDownloadedBookId === book.book_id}
-            role="button"
-            tabindex="0"
-            onclick={() => openBookDrawer(book.book_id)}
-            onkeydown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openBookDrawer(book.book_id);
-              }
-            }}
-          >
-            <div class="book-cover-shell">
-              {#if coverUrl(book)}
-                <img
-                  class="book-cover"
-                  src={coverUrl(book) ?? undefined}
-                  alt={`Cover for ${book.title}`}
-                  loading="lazy"
-                />
-              {:else}
-                <div class="book-cover book-cover--empty">
-                  <span>{book.title.slice(0, 1)}</span>
-                </div>
-              {/if}
-            </div>
-
-            <div class="book-main">
-              <div class="book-title-area">
-                <div class="book-name">{book.title}</div>
-                <div class="book-author">{book.author ?? "unknown creator"}</div>
+        {#each filteredLibraryEntries as entry (`${entry.kind}:${entry.id}`)}
+          {#if entry.kind === "tracked"}
+            <div
+              class="book-item"
+              class:book-item--last-downloaded={lastDownloadedBookId ===
+                entry.book.book_id}
+              role="button"
+              tabindex="0"
+              onclick={() => openBookDrawer(entry.book.book_id)}
+              onkeydown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openBookDrawer(entry.book.book_id);
+                }
+              }}
+            >
+              <div class="book-cover-shell">
+                {#if coverUrl(entry.book)}
+                  <img
+                    class="book-cover"
+                    src={coverUrl(entry.book) ?? undefined}
+                    alt={`Cover for ${entry.book.title}`}
+                    loading="lazy"
+                  />
+                {:else}
+                  <div class="book-cover book-cover--empty">
+                    <span>{entry.book.title.slice(0, 1)}</span>
+                  </div>
+                {/if}
               </div>
 
-              <div class="book-meta-row">
-                <div class="book-meta-stats">
-                  {#if book.is_favorite}
-                    <span class="book-favorite" aria-label="Favorite">
-                      <HeartStraightIcon size={12} weight="fill" />
-                    </span>
-                  {/if}
-                  {#if book.rating}
-                    <StarRating value={book.rating} size={11} />
-                  {/if}
-                  <span class="book-chip">{book.known_remote_chapters} ch</span>
-                  {#if book.last_remote_chapter_key}
-                    <span class="book-chip">{book.last_remote_chapter_key}</span>
-                  {/if}
-                  {#if book.latestArtifact}
-                    <span class="book-chip">{formatBytes(book.latestArtifact.file_size_bytes)}</span>
-                  {:else if bookSyncLabel(book.book_id)}
-                    <span class="book-chip book-chip--live">{bookSyncLabel(book.book_id)}</span>
-                  {:else}
-                    <span class="book-chip book-chip-muted">no epub</span>
-                  {/if}
-                  <span class="book-dot">·</span>
-                  <span class="book-timestamp">checked {formatDate(book.last_checked_at)}</span>
+              <div class="book-main">
+                <div class="book-title-area">
+                  <div class="book-name">{entry.book.title}</div>
+                  <div class="book-author">
+                    {entry.book.author ?? "unknown creator"}
+                  </div>
+                </div>
+
+                <div class="book-meta-row">
+                  <div class="book-meta-stats">
+                    {#if entry.book.is_favorite}
+                      <span class="book-favorite" aria-label="Favorite">
+                        <HeartStraightIcon size={12} weight="fill" />
+                      </span>
+                    {/if}
+                    {#if entry.book.rating}
+                      <StarRating value={entry.book.rating} size={11} />
+                    {/if}
+                    <span class="book-chip"
+                      >{entry.book.known_remote_chapters} ch</span
+                    >
+                    {#if entry.book.last_remote_chapter_key}
+                      <span class="book-chip"
+                        >{entry.book.last_remote_chapter_key}</span
+                      >
+                    {/if}
+                    {#if linkedDeviceProgressByBook.has(entry.book.book_id)}
+                      <span class="book-chip book-chip--live"
+                        >{formatPercent(
+                          linkedDeviceProgressByBook.get(entry.book.book_id) ??
+                            null,
+                        )} read</span
+                      >
+                    {/if}
+                    {#if entry.book.latestArtifact}
+                      <span class="book-chip"
+                        >{formatBytes(
+                          entry.book.latestArtifact.file_size_bytes,
+                        )}</span
+                      >
+                    {:else if bookSyncLabel(entry.book.book_id)}
+                      <span class="book-chip book-chip--live"
+                        >{bookSyncLabel(entry.book.book_id)}</span
+                      >
+                    {:else}
+                      <span class="book-chip book-chip-muted">no epub</span>
+                    {/if}
+                    <span class="book-dot">·</span>
+                    <span class="book-timestamp"
+                      >checked {formatDate(entry.book.last_checked_at)}</span
+                    >
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          {:else}
+            <div
+              class="book-item book-item--device"
+              role="button"
+              tabindex="0"
+              onclick={() => openKOReaderDocumentDrawer(entry.document.id)}
+              onkeydown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openKOReaderDocumentDrawer(entry.document.id);
+                }
+              }}
+            >
+              <div class="book-cover-shell">
+                <div class="book-cover book-cover--empty book-cover--device">
+                  <span>KO</span>
+                </div>
+              </div>
+
+              <div class="book-main">
+                <div class="book-title-area">
+                  <div class="book-name">{entry.title}</div>
+                  <div class="book-author">
+                    {entry.author ?? "manual device title"}
+                  </div>
+                </div>
+
+                <div class="book-meta-row">
+                  <div class="book-meta-stats">
+                    <span class="book-chip book-chip--device"
+                      >{entry.document.device ?? "device"}</span
+                    >
+                    <span class="book-chip book-chip--live"
+                      >{formatPercent(entry.document.progress_percent)} read</span
+                    >
+                    <span class="book-chip">{entry.document.username}</span>
+                    <span class="book-dot">·</span>
+                    <span class="book-timestamp"
+                      >synced {formatTimestamp(
+                        entry.document.progress_timestamp,
+                      )}</span
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          {/if}
         {/each}
       </div>
     {/if}
@@ -698,13 +1046,30 @@
     ></div>
 
     <div class="drawer-shell" class:closing={drawerClosing}>
-      <div class="drawer" class:closing={drawerClosing} role="dialog" aria-modal="true">
+      <div
+        class="drawer"
+        class:closing={drawerClosing}
+        role="dialog"
+        aria-modal="true"
+      >
         <div class="drawer-handle"><div class="drawer-handle-bar"></div></div>
         <div class="drawer-header">
           {#if drawerBook}
             <div class="drawer-title-block">
               <div class="drawer-title">{drawerBook.title}</div>
-              <div class="drawer-subtitle">{drawerBook.author ?? "unknown creator"}</div>
+              <div class="drawer-subtitle">
+                {drawerBook.author ?? "unknown creator"}
+              </div>
+            </div>
+          {:else if drawerKOReaderDocument}
+            <div class="drawer-title-block">
+              <div class="drawer-title">
+                {drawerKOReaderDocument.title ??
+                  `document ${drawerKOReaderDocument.document_hash.slice(0, 8)}`}
+              </div>
+              <div class="drawer-subtitle">
+                {drawerKOReaderDocument.author ?? "manual device title"}
+              </div>
             </div>
           {:else}
             <span class="drawer-title">
@@ -713,10 +1078,13 @@
               {:else if drawerTab === "jobs"}recent jobs
               {:else if drawerTab === "library"}collections
               {:else if drawerTab === "metadata"}opds metadata
+              {:else if drawerTab === "device"}koreader sync
               {:else}title controls{/if}
             </span>
           {/if}
-          <button type="button" class="drawer-close" onclick={closeDrawer}>✕</button>
+          <button type="button" class="drawer-close" onclick={closeDrawer}
+            >✕</button
+          >
         </div>
 
         <div class="drawer-panel">
@@ -747,7 +1115,11 @@
                 <div class="preview-card">
                   <div class="preview-cover-shell">
                     {#if preview.cover_url}
-                      <img class="preview-cover" src={preview.cover_url} alt={`Cover for ${preview.title}`} />
+                      <img
+                        class="preview-cover"
+                        src={preview.cover_url}
+                        alt={`Cover for ${preview.title}`}
+                      />
                     {:else}
                       <div class="preview-cover preview-cover--empty">
                         <span>{preview.title.slice(0, 1)}</span>
@@ -756,8 +1128,12 @@
                   </div>
                   <div class="preview-copy">
                     <div class="preview-title">{preview.title}</div>
-                    <div class="preview-author">{preview.author ?? "unknown creator"}</div>
-                    <div class="preview-meta">{preview.available_chapters} chapters ready</div>
+                    <div class="preview-author">
+                      {preview.author ?? "unknown creator"}
+                    </div>
+                    <div class="preview-meta">
+                      {preview.available_chapters} chapters ready
+                    </div>
                   </div>
                 </div>
 
@@ -787,41 +1163,80 @@
               <div class="status-row">
                 <div class="status-cell">
                   <div class="status-cell-label">access</div>
-                  <div class="status-cell-value" class:active={credential?.has_access_token}>
+                  <div
+                    class="status-cell-value"
+                    class:active={credential?.has_access_token}
+                  >
                     {credential?.has_access_token ? "stored" : "missing"}
                   </div>
                 </div>
                 <div class="status-cell">
                   <div class="status-cell-label">refresh</div>
-                  <div class="status-cell-value" class:active={credential?.has_refresh_token}>
+                  <div
+                    class="status-cell-value"
+                    class:active={credential?.has_refresh_token}
+                  >
                     {credential?.has_refresh_token ? "stored" : "missing"}
                   </div>
                 </div>
                 <div class="status-cell">
                   <div class="status-cell-label">remote</div>
-                  <div class="status-cell-value" class:active={validation?.valid} class:error={validation && !validation.valid}>
-                    {validation?.valid ? "valid" : validation ? "failed" : "idle"}
+                  <div
+                    class="status-cell-value"
+                    class:active={validation?.valid}
+                    class:error={validation && !validation.valid}
+                  >
+                    {validation?.valid
+                      ? "valid"
+                      : validation
+                        ? "failed"
+                        : "idle"}
                   </div>
                 </div>
               </div>
 
               {#if validation?.username || validation?.email}
-                <div class="auth-user-copy">logged in as {validation.username ?? validation.email}</div>
+                <div class="auth-user-copy">
+                  logged in as {validation.username ?? validation.email}
+                </div>
               {/if}
 
               <div class="form-field">
-                <label for="access-token" class="form-label">access token</label>
-                <textarea id="access-token" class="form-textarea" placeholder="paste bearer token" bind:value={accessToken}></textarea>
+                <label for="access-token" class="form-label">access token</label
+                >
+                <textarea
+                  id="access-token"
+                  class="form-textarea"
+                  placeholder="paste bearer token"
+                  bind:value={accessToken}
+                ></textarea>
               </div>
               <div class="form-field">
-                <label for="refresh-token" class="form-label">refresh token</label>
-                <textarea id="refresh-token" class="form-textarea" placeholder="paste refresh token" bind:value={refreshToken}></textarea>
+                <label for="refresh-token" class="form-label"
+                  >refresh token</label
+                >
+                <textarea
+                  id="refresh-token"
+                  class="form-textarea"
+                  placeholder="paste refresh token"
+                  bind:value={refreshToken}
+                ></textarea>
               </div>
               <div class="drawer-inline-actions">
-                <button type="button" class="btn btn-outline" disabled={validating} onclick={() => void runValidation()}>
+                <button
+                  type="button"
+                  class="btn btn-outline"
+                  disabled={validating}
+                  onclick={() => void runValidation()}
+                >
                   {validating ? "checking..." : "validate"}
                 </button>
-                <button type="button" class="btn btn-solid" disabled={submitting} onclick={() => void saveCredential()}>
+                <button
+                  type="button"
+                  class="btn btn-solid"
+                  disabled={submitting}
+                  onclick={() => void saveCredential()}
+                >
                   {submitting ? "saving..." : "save tokens"}
                 </button>
               </div>
@@ -834,8 +1249,14 @@
                 {#each jobs as job}
                   <div class="job-row">
                     <div>
-                      <div class="job-type">{jobTypeLabel(job.type)} · {jobTriggerLabel(job.trigger)}</div>
-                      <div class="job-book-title">{job.book_title ?? "library task"}</div>
+                      <div class="job-type">
+                        {jobTypeLabel(job.type)} · {jobTriggerLabel(
+                          job.trigger,
+                        )}
+                      </div>
+                      <div class="job-book-title">
+                        {job.book_title ?? "library task"}
+                      </div>
                       <div class="job-status {job.status}">{job.status}</div>
                     </div>
                     <div class="job-time">{formatDate(job.created_at)}</div>
@@ -846,7 +1267,9 @@
           {:else if drawerTab === "library"}
             <div class="drawer-body">
               <div class="form-field">
-                <label for="collection-name" class="form-label">new collection</label>
+                <label for="collection-name" class="form-label"
+                  >new collection</label
+                >
                 <input
                   id="collection-name"
                   class="form-input"
@@ -875,7 +1298,12 @@
                       <div class="collection-row">
                         <div>
                           <div class="collection-name">{collection.name}</div>
-                          <div class="collection-meta">{collection.book_count} title{collection.book_count !== 1 ? "s" : ""}</div>
+                          <div class="collection-meta">
+                            {collection.book_count} title{collection.book_count !==
+                            1
+                              ? "s"
+                              : ""}
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -902,14 +1330,18 @@
                       <button
                         type="button"
                         class="filter-chip"
-                        class:selected={pendingVisibleGenreSlugs.includes(genre.slug)}
+                        class:selected={pendingVisibleGenreSlugs.includes(
+                          genre.slug,
+                        )}
                         onclick={() => toggleNamedValue("genre", genre)}
                       >
                         {genre.name}
                       </button>
                     {/each}
                   {:else}
-                    <div class="drawer-empty-copy">no genres discovered yet</div>
+                    <div class="drawer-empty-copy">
+                      no genres discovered yet
+                    </div>
                   {/if}
                 </div>
               </div>
@@ -922,7 +1354,9 @@
                       <button
                         type="button"
                         class="filter-chip"
-                        class:selected={pendingVisibleTagSlugs.includes(tag.slug)}
+                        class:selected={pendingVisibleTagSlugs.includes(
+                          tag.slug,
+                        )}
                         onclick={() => toggleNamedValue("tag", tag)}
                       >
                         {tag.name}
@@ -943,6 +1377,174 @@
                 {savingOpdsVisibility ? "saving..." : "save visibility"}
               </button>
             </div>
+          {:else if drawerTab === "device"}
+            <div class="drawer-body">
+              <div class="drawer-section">
+                {#if (koreaderState?.documents.length ?? 0) === 0}
+                  <div class="drawer-empty-copy">
+                    no KOReader progress synced yet
+                  </div>
+                {:else}
+                  <div class="device-list">
+                    {#each koreaderState?.documents ?? [] as item}
+                      <button
+                        type="button"
+                        class="device-row device-row-button"
+                        onclick={() => {
+                          selectedKOReaderDocumentId = item.id;
+                        }}
+                      >
+                        <div>
+                          <div class="collection-name">
+                            {item.title ??
+                              item.linked_book_title ??
+                              `document ${item.document_hash.slice(0, 8)}`}
+                          </div>
+                          <div class="collection-meta">
+                            {#if item.linked_book_title}
+                              linked to {item.linked_book_title}
+                            {:else}
+                              {item.username} · {item.document_hash.slice(
+                                0,
+                                12,
+                              )}
+                            {/if}
+                          </div>
+                        </div>
+                        <div class="device-side">
+                          <div class="device-progress">
+                            {formatPercent(item.progress_percent)}
+                          </div>
+                          <div class="collection-meta">
+                            {formatTimestamp(item.progress_timestamp)}
+                          </div>
+                        </div>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+
+              {#if selectedKOReaderDocument}
+                <div class="drawer-section">
+                  <div class="drawer-section-label">edit synced title</div>
+                  <div class="form-field">
+                    <label for="koreader-document-title" class="form-label"
+                      >title</label
+                    >
+                    <input
+                      id="koreader-document-title"
+                      class="form-input"
+                      type="text"
+                      bind:value={koreaderDocumentTitle}
+                    />
+                  </div>
+                  <div class="form-field">
+                    <label for="koreader-document-author" class="form-label"
+                      >author</label
+                    >
+                    <input
+                      id="koreader-document-author"
+                      class="form-input"
+                      type="text"
+                      bind:value={koreaderDocumentAuthor}
+                    />
+                  </div>
+                  <div class="form-field">
+                    <label for="koreader-link-book" class="form-label"
+                      >link to tracked title</label
+                    >
+                    <Select
+                      id="koreader-link-book"
+                      class="form-select"
+                      bind:value={koreaderLinkedBookId}
+                      options={koreaderLinkOptions(books)}
+                      placeholder="unlinked"
+                    />
+                  </div>
+                  <div class="auth-user-copy">
+                    {selectedKOReaderDocument.username} · {selectedKOReaderDocument.document_hash}
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-solid full-width-btn"
+                    disabled={savingKoreaderDocument}
+                    onclick={() => void saveKOReaderDocument()}
+                  >
+                    {savingKoreaderDocument ? "saving..." : "save synced title"}
+                  </button>
+                </div>
+              {/if}
+            </div>
+          {:else if drawerTab === "koreader-document" && drawerKOReaderDocument}
+            <div class="drawer-body">
+              <div class="status-row">
+                <div class="status-cell">
+                  <div class="status-cell-label">progress</div>
+                  <div class="status-cell-value active">
+                    {formatPercent(drawerKOReaderDocument.progress_percent)}
+                  </div>
+                </div>
+                <div class="status-cell">
+                  <div class="status-cell-label">device</div>
+                  <div class="status-cell-value">
+                    {drawerKOReaderDocument.device ?? "unknown"}
+                  </div>
+                </div>
+                <div class="status-cell">
+                  <div class="status-cell-label">user</div>
+                  <div class="status-cell-value active">
+                    {drawerKOReaderDocument.username}
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-field">
+                <label for="drawer-koreader-document-title" class="form-label"
+                  >title</label
+                >
+                <input
+                  id="drawer-koreader-document-title"
+                  class="form-input"
+                  type="text"
+                  bind:value={koreaderDocumentTitle}
+                />
+              </div>
+              <div class="form-field">
+                <label for="drawer-koreader-document-author" class="form-label"
+                  >author</label
+                >
+                <input
+                  id="drawer-koreader-document-author"
+                  class="form-input"
+                  type="text"
+                  bind:value={koreaderDocumentAuthor}
+                />
+              </div>
+              <div class="form-field">
+                <label for="drawer-koreader-link-book" class="form-label"
+                  >link to tracked title</label
+                >
+                <Select
+                  id="drawer-koreader-link-book"
+                  class="form-select"
+                  bind:value={koreaderLinkedBookId}
+                  options={koreaderLinkOptions(books)}
+                  placeholder="unlinked"
+                />
+              </div>
+              <div class="auth-user-copy">
+                {drawerKOReaderDocument.username} · {drawerKOReaderDocument.document_hash}
+              </div>
+              <button
+                type="button"
+                class="btn btn-solid full-width-btn"
+                disabled={savingKoreaderDocument}
+                onclick={() => void saveKOReaderDocument()}
+              >
+                {savingKoreaderDocument ? "saving..." : "save synced title"}
+              </button>
+            </div>
           {:else if drawerBook}
             <div class="drawer-body">
               <div class="form-field">
@@ -952,12 +1554,17 @@
                     class="favorite-toggle"
                     class:active={preferenceIsFavorite}
                     aria-pressed={preferenceIsFavorite}
-                    aria-label={preferenceIsFavorite ? "Remove favorite" : "Mark favorite"}
+                    aria-label={preferenceIsFavorite
+                      ? "Remove favorite"
+                      : "Mark favorite"}
                     onclick={() => {
                       preferenceIsFavorite = !preferenceIsFavorite;
                     }}
                   >
-                    <HeartStraightIcon size={16} weight={preferenceIsFavorite ? "fill" : "regular"} />
+                    <HeartStraightIcon
+                      size={16}
+                      weight={preferenceIsFavorite ? "fill" : "regular"}
+                    />
                   </button>
                   <StarPicker
                     value={preferenceRating ? Number(preferenceRating) : 0}
@@ -976,7 +1583,9 @@
                     <button
                       type="button"
                       class="filter-chip"
-                      class:selected={preferenceCollectionIds.includes(collection.id)}
+                      class:selected={preferenceCollectionIds.includes(
+                        collection.id,
+                      )}
                       onclick={() => toggleCollectionValue(collection.id)}
                     >
                       {collection.name}
@@ -987,24 +1596,37 @@
 
               <div class="form-field">
                 <label for="book-comment" class="form-label">comment</label>
-                <textarea id="book-comment" class="form-textarea" placeholder="private note" bind:value={preferenceComment}></textarea>
+                <textarea
+                  id="book-comment"
+                  class="form-textarea"
+                  placeholder="private note"
+                  bind:value={preferenceComment}
+                ></textarea>
               </div>
 
               <div class="form-field">
-                <label for="book-branch-select" class="form-label">branch</label>
+                <label for="book-branch-select" class="form-label">branch</label
+                >
                 <Select
                   id="book-branch-select"
                   class="form-select"
                   value={branchSelectValue(drawerBook)}
                   options={branchOptions(drawerBook.branches)}
                   placeholder="default branch"
-                  disabled={actionBookId === drawerBook.book_id || drawerBook.branches.length === 0}
-                  onValueChange={(value) => void changeBookBranch(drawerBook.book_id, value || null)}
+                  disabled={actionBookId === drawerBook.book_id ||
+                    drawerBook.branches.length === 0}
+                  onValueChange={(value) =>
+                    void changeBookBranch(drawerBook.book_id, value || null)}
                 />
               </div>
 
               <div class="book-drawer-actions">
-                <button type="button" class="btn btn-solid" disabled={savingPreferences} onclick={() => void saveBookPreferences()}>
+                <button
+                  type="button"
+                  class="btn btn-solid"
+                  disabled={savingPreferences}
+                  onclick={() => void saveBookPreferences()}
+                >
                   save
                 </button>
                 <button
@@ -1016,7 +1638,9 @@
                   check now
                 </button>
                 {#if artifactUrl(drawerBook)}
-                  <a href={artifactUrl(drawerBook)} class="btn btn-ghost">download epub</a>
+                  <a href={artifactUrl(drawerBook)} class="btn btn-ghost"
+                    >download epub</a
+                  >
                 {/if}
                 <button
                   type="button"
@@ -1035,19 +1659,58 @@
   {/if}
 
   <div class="fab-group">
-    <button type="button" class="fab fab-secondary" onclick={() => openDrawer("jobs")} title="Recent jobs" aria-label="Recent jobs">
+    <button
+      type="button"
+      class="fab fab-secondary"
+      onclick={() => openDrawer("jobs")}
+      title="Recent jobs"
+      aria-label="Recent jobs"
+    >
       <ClockCounterClockwiseIcon size={20} weight="bold" />
     </button>
-    <button type="button" class="fab fab-secondary" onclick={() => openDrawer("library")} title="Collections" aria-label="Collections">
+    <button
+      type="button"
+      class="fab fab-secondary"
+      onclick={() => openDrawer("library")}
+      title="Collections"
+      aria-label="Collections"
+    >
       <BooksIcon size={20} weight="bold" />
     </button>
-    <button type="button" class="fab fab-secondary" onclick={() => openDrawer("metadata")} title="OPDS metadata" aria-label="OPDS metadata">
+    <button
+      type="button"
+      class="fab fab-secondary"
+      onclick={() => openDrawer("metadata")}
+      title="OPDS metadata"
+      aria-label="OPDS metadata"
+    >
       <EyeIcon size={20} weight="bold" />
     </button>
-    <button type="button" class="fab fab-secondary" onclick={() => openDrawer("auth")} title="Auth settings" aria-label="Auth settings">
+    <button
+      type="button"
+      class="fab fab-secondary"
+      onclick={() => openDrawer("device")}
+      title="KOReader sync"
+      aria-label="KOReader sync"
+    >
+      <ArrowsClockwiseIcon size={20} weight="bold" />
+    </button>
+    <button
+      type="button"
+      class="fab fab-secondary"
+      onclick={() => openDrawer("auth")}
+      title="Auth settings"
+      aria-label="Auth settings"
+    >
       <ShieldCheckIcon size={18} weight="bold" />
     </button>
-    <button type="button" class="fab fab-primary" onclick={() => openDrawer("track")} title="Add title" aria-label="Add a title">
+    <button
+      type="button"
+      class="fab fab-primary"
+      onclick={() => openDrawer("track")}
+      title="Add title"
+      aria-label="Add a title"
+    >
       <PlusIcon size={22} weight="bold" />
     </button>
   </div>
@@ -1056,7 +1719,9 @@
   <ConfirmDialog
     open={collectionDeleteCandidate !== null}
     title="delete collection"
-    description={collectionDeleteCandidate ? `Remove "${collectionDeleteCandidate.name}" from the library?` : ""}
+    description={collectionDeleteCandidate
+      ? `Remove "${collectionDeleteCandidate.name}" from the library?`
+      : ""}
     confirmLabel="delete"
     cancelLabel="cancel"
     danger={true}
