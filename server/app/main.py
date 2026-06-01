@@ -68,6 +68,9 @@ KO_READER_AUTH_EXEMPT_PATHS = {
     "/users/create",
     "/users/auth",
     "/syncs/progress",
+    "/api/v1/app-auth/session",
+    "/api/v1/app-auth/login",
+    "/api/v1/app-auth/logout",
 }
 
 
@@ -78,7 +81,17 @@ async def add_security_headers(request: Request, call_next: Callable) -> Respons
         path = request.url.path
         skip_global_auth = path == "/health" or path in KO_READER_AUTH_EXEMPT_PATHS or path.startswith("/syncs/progress/")
         if not skip_global_auth:
-            ensure_request_authorized(request)
+            is_frontend_request = not (
+                path.startswith("/api/")
+                or path.startswith("/opds")
+                or path.startswith("/users/")
+                or path == "/users/auth"
+                or path == "/users/create"
+                or path.startswith("/syncs/")
+                or path == "/healthcheck"
+            )
+            if not is_frontend_request:
+                ensure_request_authorized(request, challenge=path.startswith("/opds"))
         response = await call_next(request)
     except HTTPException as exc:
         response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers or {})

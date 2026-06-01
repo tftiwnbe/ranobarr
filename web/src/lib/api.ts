@@ -3,6 +3,16 @@ export type NamedTagSummary = {
   slug: string;
 };
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export type BranchSummary = {
   id: string;
   name: string;
@@ -24,6 +34,12 @@ export type OpdsVisibility = {
   tags: NamedTagSummary[];
   visible_genre_slugs: string[];
   visible_tag_slugs: string[];
+};
+
+export type BrowserAuthSession = {
+  auth_enabled: boolean;
+  authenticated: boolean;
+  username: string | null;
 };
 
 export type KOReaderDocument = {
@@ -157,7 +173,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     const detail = payload?.detail ?? `Request failed with status ${response.status}`;
-    throw new Error(detail);
+    throw new ApiError(detail, response.status);
   }
 
   if (response.status === 204) {
@@ -165,6 +181,27 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+export async function getBrowserAuthSession(): Promise<BrowserAuthSession> {
+  return apiFetch<BrowserAuthSession>("/api/v1/app-auth/session");
+}
+
+export async function loginBrowserSession(payload: {
+  username: string;
+  password: string;
+  remember_me: boolean;
+}): Promise<BrowserAuthSession> {
+  return apiFetch<BrowserAuthSession>("/api/v1/app-auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function logoutBrowserSession(): Promise<BrowserAuthSession> {
+  return apiFetch<BrowserAuthSession>("/api/v1/app-auth/logout", {
+    method: "POST"
+  });
 }
 
 export async function getCredential(): Promise<CredentialView | null> {

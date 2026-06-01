@@ -4,11 +4,12 @@
     ArrowsClockwiseIcon,
     BooksIcon,
     ClockCounterClockwiseIcon,
+    EyeIcon,
+    EyeSlashIcon,
     FunnelSimpleIcon,
     HeartStraightIcon,
     PlusIcon,
     ShieldCheckIcon,
-    EyeIcon,
   } from "phosphor-svelte";
   import ConfirmDialog from "./lib/components/ConfirmDialog.svelte";
   import Select from "./lib/components/Select.svelte";
@@ -23,9 +24,12 @@
     createTrackedBook,
     deleteCollection,
     deleteTrackedBook,
+    getBrowserAuthSession,
     getCredential,
     getKOReaderState,
     getOpdsVisibility,
+    loginBrowserSession,
+    logoutBrowserSession,
     latestArtifact,
     listCollections,
     listJobs,
@@ -38,7 +42,9 @@
     updateKOReaderDocument,
     updateTrackedBookBranch,
     validateCredential,
+    ApiError,
     type ArtifactSummary,
+    type BrowserAuthSession,
     type BranchSummary,
     type CollectionSummary,
     type CredentialValidation,
@@ -89,6 +95,7 @@
   let koreaderState = $state<KOReaderState | null>(null);
   let credential = $state<CredentialView | null>(null);
   let validation = $state<CredentialValidation | null>(null);
+  let authSession = $state<BrowserAuthSession | null>(null);
 
   let loading = $state(true);
   let submitting = $state(false);
@@ -102,6 +109,13 @@
 
   let accessToken = $state("");
   let refreshToken = $state("");
+  let authUsername = $state("");
+  let authPassword = $state("");
+  let authRememberMe = $state(true);
+  let authShowPassword = $state(false);
+  let authChecking = $state(true);
+  let authSubmitting = $state(false);
+  let authError = $state<string | null>(null);
   let bookUrl = $state("");
   let selectedBranchId = $state("");
   let preview = $state<PreviewBook | null>(null);
@@ -191,18 +205,17 @@
     }
     return states;
   });
-  const lastDownloadedBookId = $derived.by(() => {
-    const recent = books
-      .filter((book) => book.last_downloaded_at)
-      .sort(
-        (left, right) =>
-          new Date(right.last_downloaded_at as string).getTime() -
-          new Date(left.last_downloaded_at as string).getTime(),
-      );
-    return recent[0]?.book_id ?? null;
+  const currentSyncedBookId = $derived.by(() => {
+    const recent = (koreaderState?.documents ?? [])
+      .filter((document) => document.linked_book_id && document.progress_timestamp !== null)
+      .sort((left, right) => (right.progress_timestamp ?? 0) - (left.progress_timestamp ?? 0));
+    return recent[0]?.linked_book_id ?? null;
   });
   const totalTitleCount = $derived(
     books.length + manualKOReaderDocuments.length,
+  );
+  const showBrowserAuth = $derived(
+    authChecking || (authSession?.auth_enabled === true && !authSession.authenticated),
   );
   const filteredLibraryEntries = $derived.by(() => {
     let result: LibraryEntry[] = [
@@ -308,12 +321,58 @@
       koreaderState = deviceState;
       pendingVisibleGenreSlugs = [...visibility.visible_genre_slugs];
       pendingVisibleTagSlugs = [...visibility.visible_tag_slugs];
+      authError = null;
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "failed to load dashboard",
-      );
+      if (error instanceof ApiError && error.status === 401) {
+        authSession = { auth_enabled: true, authenticated: false, username: null };
+        return;
+      }
+      toast.error(error instanceof Error ? error.message : "failed to load dashboard");
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadAuthSession() {
+    authChecking = true;
+    try {
+      authSession = await getBrowserAuthSession();
+      if (!authSession.auth_enabled || authSession.authenticated) {
+        await loadDashboard();
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "failed to check auth");
+    } finally {
+      authChecking = false;
+    }
+  }
+
+  async function submitBrowserAuth() {
+    if (!authUsername.trim() || !authPassword) return;
+    authSubmitting = true;
+    authError = null;
+    try {
+      authSession = await loginBrowserSession({
+        username: authUsername.trim(),
+        password: authPassword,
+        remember_me: authRememberMe,
+      });
+      authPassword = "";
+      await loadDashboard();
+    } catch (error) {
+      authError = error instanceof Error ? error.message : "failed to sign in";
+    } finally {
+      authSubmitting = false;
+    }
+  }
+
+  async function signOutBrowserSession() {
+    try {
+      authSession = await logoutBrowserSession();
+      authPassword = "";
+      closeDrawer();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "failed to sign out");
     }
   }
 
@@ -713,7 +772,20 @@
     return "system";
   }
 
-  onMount(loadDashboard);
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && drawerOpen) {
+      event.preventDefault();
+      closeDrawer();
+    }
+  }
+
+  onMount(() => {
+    window.addEventListener("keydown", handleWindowKeydown);
+    void loadAuthSession();
+    return () => {
+      window.removeEventListener("keydown", handleWindowKeydown);
+    };
+  });
   $effect(() => {
     syncDrawerBookPreferences(drawerBook);
   });
@@ -737,6 +809,86 @@
   />
 </svelte:head>
 
+{#if showBrowserAuth}
+  <main class="auth-shell">
+    <StarField count={54} />
+    <div class="grid-overlay"></div>
+
+    <div class="auth-card-shell">
+      {#if authChecking}
+        <div class="auth-loading-copy">checking session...</div>
+      {:else}
+        <div class="auth-brand">
+          <div class="auth-brand-name">ranobarr</div>
+          <div class="auth-brand-copy">sign in to open your library</div>
+        </div>
+
+        <div class="auth-card">
+          <form
+            class="auth-form"
+            onsubmit={(event) => {
+              event.preventDefault();
+              void submitBrowserAuth();
+            }}
+          >
+            <div class="form-field">
+              <label for="browser-auth-username" class="form-label">username</label>
+              <input
+                id="browser-auth-username"
+                class="form-input"
+                type="text"
+                autocomplete="username"
+                bind:value={authUsername}
+              />
+            </div>
+
+            <div class="form-field auth-password-field">
+              <label for="browser-auth-password" class="form-label">password</label>
+              <input
+                id="browser-auth-password"
+                class="form-input auth-password-input"
+                type={authShowPassword ? "text" : "password"}
+                autocomplete="current-password"
+                bind:value={authPassword}
+              />
+              <button
+                type="button"
+                class="auth-password-toggle"
+                aria-label={authShowPassword ? "Hide password" : "Show password"}
+                onclick={() => {
+                  authShowPassword = !authShowPassword;
+                }}
+              >
+                {#if authShowPassword}
+                  <EyeSlashIcon size={16} />
+                {:else}
+                  <EyeIcon size={16} />
+                {/if}
+              </button>
+            </div>
+
+            <label class="auth-remember-row">
+              <input type="checkbox" bind:checked={authRememberMe} />
+              <span>remember this browser</span>
+            </label>
+
+            {#if authError}
+              <div class="auth-error">{authError}</div>
+            {/if}
+
+            <button
+              type="submit"
+              class="btn btn-solid full-width-btn"
+              disabled={authSubmitting || !authUsername.trim() || !authPassword}
+            >
+              {authSubmitting ? "signing in..." : "sign in"}
+            </button>
+          </form>
+        </div>
+      {/if}
+    </div>
+  </main>
+{:else}
 <div class="page-shell">
   <StarField count={54} />
   <div class="grid-overlay"></div>
@@ -784,49 +936,43 @@
           bind:value={searchQuery}
         />
       </div>
-
-      <button
-        type="button"
-        class="sort-btn"
-        class:active={sortMode === "title"}
-        onclick={() => setSort("title")}
-      >
-        title
-      </button>
-      <button
-        type="button"
-        class="sort-btn"
-        class:active={sortMode === "updated"}
-        onclick={() => setSort("updated")}
-      >
-        updated
-      </button>
-      <button
-        type="button"
-        class="sort-btn"
-        class:active={sortMode === "added"}
-        onclick={() => setSort("added")}
-      >
-        added
-      </button>
-      <button
-        type="button"
-        class="sort-btn"
-        onclick={() => openDrawer("device")}
-      >
-        device
-      </button>
-      <button
-        type="button"
-        class="filter-btn"
-        class:active={filterOpen}
-        onclick={() => {
-          filterOpen = !filterOpen;
-        }}
-        aria-label="Toggle filters"
-      >
-        <FunnelSimpleIcon size={14} weight="bold" />
-      </button>
+      <div class="toolbar-actions">
+        <button
+          type="button"
+          class="sort-btn"
+          class:active={sortMode === "title"}
+          onclick={() => setSort("title")}
+        >
+          title
+        </button>
+        <button
+          type="button"
+          class="sort-btn"
+          class:active={sortMode === "updated"}
+          onclick={() => setSort("updated")}
+        >
+          updated
+        </button>
+        <button
+          type="button"
+          class="sort-btn"
+          class:active={sortMode === "added"}
+          onclick={() => setSort("added")}
+        >
+          added
+        </button>
+        <button
+          type="button"
+          class="filter-btn"
+          class:active={filterOpen}
+          onclick={() => {
+            filterOpen = !filterOpen;
+          }}
+          aria-label="Toggle filters"
+        >
+          <FunnelSimpleIcon size={14} weight="bold" />
+        </button>
+      </div>
     </div>
 
     {#if filterOpen}
@@ -898,7 +1044,7 @@
           {#if entry.kind === "tracked"}
             <div
               class="book-item"
-              class:book-item--last-downloaded={lastDownloadedBookId ===
+              class:book-item--current={currentSyncedBookId ===
                 entry.book.book_id}
               role="button"
               tabindex="0"
@@ -974,7 +1120,7 @@
                     {/if}
                     <span class="book-dot">·</span>
                     <span class="book-timestamp"
-                      >checked {formatDate(entry.book.last_checked_at)}</span
+                      >updated {formatDate(entry.book.updated_at)}</span
                     >
                   </div>
                 </div>
@@ -1201,6 +1347,12 @@
                 </div>
               {/if}
 
+              {#if authSession?.authenticated}
+                <div class="auth-user-copy">
+                  browser session: {authSession.username}
+                </div>
+              {/if}
+
               <div class="form-field">
                 <label for="access-token" class="form-label">access token</label
                 >
@@ -1240,6 +1392,16 @@
                   {submitting ? "saving..." : "save tokens"}
                 </button>
               </div>
+
+              {#if authSession?.authenticated}
+                <button
+                  type="button"
+                  class="btn btn-ghost full-width-btn"
+                  onclick={() => void signOutBrowserSession()}
+                >
+                  sign out browser session
+                </button>
+              {/if}
             </div>
           {:else if drawerTab === "jobs"}
             <div class="drawer-body">
@@ -1576,23 +1738,25 @@
                 </div>
               </div>
 
-              <div class="drawer-section">
-                <div class="drawer-section-label">collections</div>
-                <div class="chip-grid">
-                  {#each collections as collection}
-                    <button
-                      type="button"
-                      class="filter-chip"
-                      class:selected={preferenceCollectionIds.includes(
-                        collection.id,
-                      )}
-                      onclick={() => toggleCollectionValue(collection.id)}
-                    >
-                      {collection.name}
-                    </button>
-                  {/each}
+              {#if collections.length > 0}
+                <div class="drawer-section">
+                  <div class="drawer-section-label">collections</div>
+                  <div class="chip-grid">
+                    {#each collections as collection}
+                      <button
+                        type="button"
+                        class="filter-chip"
+                        class:selected={preferenceCollectionIds.includes(
+                          collection.id,
+                        )}
+                        onclick={() => toggleCollectionValue(collection.id)}
+                      >
+                        {collection.name}
+                      </button>
+                    {/each}
+                  </div>
                 </div>
-              </div>
+              {/if}
 
               <div class="form-field">
                 <label for="book-comment" class="form-label">comment</label>
@@ -1731,3 +1895,4 @@
     }}
   />
 </div>
+{/if}

@@ -608,8 +608,9 @@ async def test_preview_endpoint_returns_branches_and_metadata(client, monkeypatc
             assert slug == "preview-book"
             return {
                 "id": 1,
-                "rus_name": "Preview Book",
-                "authors": [{"name": "Preview Author"}],
+                "eng_name": "Preview Book EN",
+                "rus_name": "Preview Book RU",
+                "publisher": {"name": "Preview Publisher"},
                 "summary": "Preview summary",
                 "cover": {"default": "https://example.com/cover.jpg"},
                 "genres": [{"name": "Fantasy"}],
@@ -638,8 +639,8 @@ async def test_preview_endpoint_returns_branches_and_metadata(client, monkeypatc
     response = await client.post("/api/v1/tracking/preview", json={"url": "https://ranobelib.me/ru/book/preview-book"})
     assert response.status_code == 200
     payload = response.json()
-    assert payload["title"] == "Preview Book"
-    assert payload["author"] == "Preview Author"
+    assert payload["title"] == "Preview Book EN"
+    assert payload["author"] == "Preview Publisher"
     assert payload["branches"][0]["id"] == "5"
     assert payload["genres"][0]["name"] == "Fantasy"
     assert payload["tags"][0]["name"] == "Academy"

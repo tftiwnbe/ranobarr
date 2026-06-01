@@ -440,8 +440,8 @@ async def resolve_remote_book(
         raise TrackingError("RanobeLib metadata is unavailable for this title")
 
     title = normalize_book_title(
-        novel_info.get("rus_name")
-        or novel_info.get("eng_name")
+        novel_info.get("eng_name")
+        or novel_info.get("rus_name")
         or novel_info.get("name")
         or slug
     )
@@ -815,8 +815,8 @@ async def process_check_updates_job(
     cover = novel_info.get("cover") or {}
     book.available_chapters = len(selected_chapters)
     book.title = normalize_book_title(
-        novel_info.get("rus_name")
-        or novel_info.get("eng_name")
+        novel_info.get("eng_name")
+        or novel_info.get("rus_name")
         or novel_info.get("name")
         or book.title
     )
