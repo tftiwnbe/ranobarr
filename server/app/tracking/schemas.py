@@ -123,6 +123,8 @@ class TrackedBookDetail(TrackedBookSummary):
 
 
 class BookPreferencesUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=240)
+    author: str | None = Field(default=None, max_length=240)
     opds_visible_genre_slugs: list[str] | None = None
     opds_visible_tag_slugs: list[str] | None = None
     is_favorite: bool | None = None

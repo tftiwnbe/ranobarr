@@ -841,6 +841,31 @@ async def test_book_preferences_update_can_set_current_rating_comment_and_visibl
     assert len(membership) == 1
 
 
+async def test_book_preferences_update_can_edit_title_and_author(client, db) -> None:
+    book = Book(
+        slug="editable-book",
+        source_url="https://ranobelib.me/ru/book/editable-book",
+        title="Editable Book",
+        author="Original Author",
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    db.add(TrackRule(book_id=book.id))
+    db.add(BookState(book_id=book.id, last_remote_chapter_key="v1_ch1"))
+    await db.commit()
+
+    response = await client.patch(
+        f"/api/v1/tracking/books/{book.id}/preferences",
+        json={"title": "Edited Book", "author": "Edited Author"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["title"] == "Edited Book"
+    assert payload["author"] == "Edited Author"
+
+
 async def test_library_collection_crud(client) -> None:
     response = await client.post(
         "/api/v1/library/collections",

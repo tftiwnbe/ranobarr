@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from alembic import command, config
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -12,13 +13,20 @@ from app.config import get_settings
 
 class DatabaseSessionManager:
     def __init__(self, url: str, engine_kwargs: Mapping[str, Any] | None = None):
-        self._engine = create_async_engine(url, **(engine_kwargs or {}))
+        effective_kwargs = {"connect_args": {"timeout": 30}}
+        if engine_kwargs:
+            effective_kwargs.update(engine_kwargs)
+            connect_args = {"timeout": 30}
+            connect_args.update(effective_kwargs.get("connect_args", {}))
+            effective_kwargs["connect_args"] = connect_args
+        self._engine = create_async_engine(url, **effective_kwargs)
         self._sessionmaker = async_sessionmaker(
             self._engine,
             expire_on_commit=False,
             class_=AsyncSession,
         )
         self._closed = False
+        event.listen(self._engine.sync_engine, "connect", _configure_sqlite_connection)
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -46,6 +54,14 @@ class DatabaseSessionManager:
         self._ensure_open()
         async with self._sessionmaker() as session:
             yield session
+
+
+def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.close()
 
 
 sessionmanager = DatabaseSessionManager(get_settings().app.database_url)

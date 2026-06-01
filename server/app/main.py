@@ -155,4 +155,5 @@ if __name__ == "__main__":
         app="app.main:app",
         host=settings.server.host,
         port=settings.server.port,
+        access_log=False,
     )

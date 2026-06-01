@@ -152,6 +152,8 @@ export type TrackBookPayload = {
 };
 
 export type BookPreferencesPayload = {
+  title?: string | null;
+  author?: string | null;
   opds_visible_genre_slugs?: string[] | null;
   opds_visible_tag_slugs?: string[] | null;
   is_favorite?: boolean | null;

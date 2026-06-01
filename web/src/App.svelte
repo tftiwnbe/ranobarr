@@ -136,6 +136,8 @@
   let preferenceIsFavorite = $state(false);
   let preferenceRating = $state("");
   let preferenceComment = $state("");
+  let preferenceTitle = $state("");
+  let preferenceAuthor = $state("");
   let pendingVisibleGenreSlugs = $state<string[]>([]);
   let pendingVisibleTagSlugs = $state<string[]>([]);
   let collectionDeleteCandidate = $state<CollectionSummary | null>(null);
@@ -511,6 +513,8 @@
     savingPreferences = true;
     try {
       await updateBookPreferences(drawerBook.book_id, {
+        title: preferenceTitle.trim() || null,
+        author: preferenceAuthor.trim() || null,
         is_favorite: preferenceIsFavorite,
         rating: preferenceRating ? Number(preferenceRating) : null,
         comment: preferenceComment.trim() || null,
@@ -744,6 +748,8 @@
 
   function syncDrawerBookPreferences(book: BookCard | null) {
     if (!book) return;
+    preferenceTitle = book.title;
+    preferenceAuthor = book.author ?? "";
     preferenceCollectionIds = book.collections.map(
       (collection) => collection.id,
     );
@@ -1709,6 +1715,26 @@
             </div>
           {:else if drawerBook}
             <div class="drawer-body">
+              <div class="form-field">
+                <label for="book-title" class="form-label">title</label>
+                <input
+                  id="book-title"
+                  class="form-input"
+                  type="text"
+                  bind:value={preferenceTitle}
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="book-author" class="form-label">author</label>
+                <input
+                  id="book-author"
+                  class="form-input"
+                  type="text"
+                  bind:value={preferenceAuthor}
+                />
+              </div>
+
               <div class="form-field">
                 <div class="rating-row">
                   <button

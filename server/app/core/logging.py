@@ -41,3 +41,6 @@ def configure_logging() -> None:
         root_logger.addHandler(stream_handler)
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").handlers.clear()
+    logging.getLogger("uvicorn.access").propagate = False
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

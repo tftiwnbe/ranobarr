@@ -980,6 +980,12 @@ async def update_book_preferences(
     genres = deserialize_named_items(book.genres_json)
     tags = deserialize_named_items(book.tags_json)
 
+    if "title" in field_names:
+        normalized_title = (request.title or "").strip()
+        book.title = normalize_book_title(normalized_title) if normalized_title else book.title
+    if "author" in field_names:
+        normalized_author = (request.author or "").strip()
+        book.author = normalized_author or None
     if "opds_visible_genre_slugs" in field_names:
         book.opds_visible_genres_json = serialize_visible_named_items(genres, request.opds_visible_genre_slugs)
     if "opds_visible_tag_slugs" in field_names:

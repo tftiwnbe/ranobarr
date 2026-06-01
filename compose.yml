@@ -14,3 +14,4 @@ services:
       RANOBARR__SCHEDULER__SCAN_INTERVAL_SECONDS: "${RANOBARR_SCAN_INTERVAL_SECONDS:-900}"
     volumes:
       - ./data:/data
+      - /etc/localtime:/etc/localtime:ro
