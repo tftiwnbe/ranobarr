@@ -214,15 +214,22 @@
   });
   const currentSyncedBookId = $derived.by(() => {
     const recent = (koreaderState?.documents ?? [])
-      .filter((document) => document.linked_book_id && document.progress_timestamp !== null)
-      .sort((left, right) => (right.progress_timestamp ?? 0) - (left.progress_timestamp ?? 0));
+      .filter(
+        (document) =>
+          document.linked_book_id && document.progress_timestamp !== null,
+      )
+      .sort(
+        (left, right) =>
+          (right.progress_timestamp ?? 0) - (left.progress_timestamp ?? 0),
+      );
     return recent[0]?.linked_book_id ?? null;
   });
   const totalTitleCount = $derived(
     books.length + manualKOReaderDocuments.length,
   );
   const showBrowserAuth = $derived(
-    authChecking || (authSession?.auth_enabled === true && !authSession.authenticated),
+    authChecking ||
+      (authSession?.auth_enabled === true && !authSession.authenticated),
   );
   const filteredLibraryEntries = $derived.by(() => {
     let result: LibraryEntry[] = [
@@ -331,10 +338,16 @@
       authError = null;
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        authSession = { auth_enabled: true, authenticated: false, username: null };
+        authSession = {
+          auth_enabled: true,
+          authenticated: false,
+          username: null,
+        };
         return;
       }
-      toast.error(error instanceof Error ? error.message : "failed to load dashboard");
+      toast.error(
+        error instanceof Error ? error.message : "failed to load dashboard",
+      );
     } finally {
       loading = false;
     }
@@ -348,7 +361,9 @@
         await loadDashboard();
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to check auth");
+      toast.error(
+        error instanceof Error ? error.message : "failed to check auth",
+      );
     } finally {
       authChecking = false;
     }
@@ -379,7 +394,9 @@
       authPassword = "";
       closeDrawer();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "failed to sign out");
+      toast.error(
+        error instanceof Error ? error.message : "failed to sign out",
+      );
     }
   }
 
@@ -868,7 +885,9 @@
             }}
           >
             <div class="form-field">
-              <label for="browser-auth-username" class="form-label">username</label>
+              <label for="browser-auth-username" class="form-label"
+                >username</label
+              >
               <input
                 id="browser-auth-username"
                 class="form-input"
@@ -879,7 +898,9 @@
             </div>
 
             <div class="form-field auth-password-field">
-              <label for="browser-auth-password" class="form-label">password</label>
+              <label for="browser-auth-password" class="form-label"
+                >password</label
+              >
               <input
                 id="browser-auth-password"
                 class="form-input auth-password-input"
@@ -890,7 +911,9 @@
               <button
                 type="button"
                 class="auth-password-toggle"
-                aria-label={authShowPassword ? "Hide password" : "Show password"}
+                aria-label={authShowPassword
+                  ? "Hide password"
+                  : "Show password"}
                 onclick={() => {
                   authShowPassword = !authShowPassword;
                 }}
@@ -925,1105 +948,1119 @@
     </div>
   </main>
 {:else}
-<div class="page-shell">
-  <StarField count={54} />
-  <div class="grid-overlay"></div>
+  <div class="page-shell">
+    <StarField count={54} />
+    <div class="grid-overlay"></div>
 
-  <header class="app-header">
-    <div class="app-logo">
-      <span class="app-logo-name">ranobarr</span>
-      <span class="app-logo-sub">/ ranobe tracker</span>
-    </div>
+    <header class="app-header">
+      <div class="app-logo">
+        <span class="app-logo-name">ranobarr</span>
+        <span class="app-logo-sub">/ ranobe tracker</span>
+      </div>
 
-    <div class="header-stats">
-      {#if favoriteCount > 0}
+      <div class="header-stats">
+        {#if favoriteCount > 0}
+          <div class="stat-pill">
+            <span class="stat-pill-value">{favoriteCount}</span>
+            <span>favorites</span>
+          </div>
+        {/if}
+        {#if runningJobs > 0}
+          <div class="stat-pill stat-pill--running">
+            <span class="stat-pill-value">{runningJobs}</span>
+            <span>running</span>
+          </div>
+        {/if}
+        {#if failedJobs > 0}
+          <div class="stat-pill stat-pill--error">
+            <span class="stat-pill-value">{failedJobs}</span>
+            <span>failed</span>
+          </div>
+        {/if}
         <div class="stat-pill">
-          <span class="stat-pill-value">{favoriteCount}</span>
-          <span>favorites</span>
+          <span class="stat-pill-value">{totalTitleCount}</span>
+          <span>titles</span>
         </div>
-      {/if}
-      {#if runningJobs > 0}
-        <div class="stat-pill stat-pill--running">
-          <span class="stat-pill-value">{runningJobs}</span>
-          <span>running</span>
-        </div>
-      {/if}
-      {#if failedJobs > 0}
-        <div class="stat-pill stat-pill--error">
-          <span class="stat-pill-value">{failedJobs}</span>
-          <span>failed</span>
-        </div>
-      {/if}
-      <div class="stat-pill">
-        <span class="stat-pill-value">{totalTitleCount}</span>
-        <span>titles</span>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <main class="page-body">
-    <div class="toolbar">
-      <div class="search-wrap">
-        <span class="search-icon">
-          <MagnifyingGlassIcon size={16} weight="regular" />
-        </span>
-        <input
-          class="search-input"
-          type="search"
-          placeholder="search titles..."
-          bind:value={searchQuery}
-        />
-      </div>
-      <div class="toolbar-actions">
-        <button
-          type="button"
-          class="sort-btn"
-          class:active={sortMode === "title"}
-          onclick={() => setSort("title")}
-        >
-          title
-        </button>
-        <button
-          type="button"
-          class="sort-btn"
-          class:active={sortMode === "updated"}
-          onclick={() => setSort("updated")}
-        >
-          updated
-        </button>
-        <button
-          type="button"
-          class="sort-btn"
-          class:active={sortMode === "added"}
-          onclick={() => setSort("added")}
-        >
-          added
-        </button>
-        <button
-          type="button"
-          class="filter-btn"
-          class:active={filterOpen}
-          onclick={() => {
-            filterOpen = !filterOpen;
-          }}
-          aria-label="Toggle filters"
-        >
-          <FunnelSimpleIcon size={14} weight="bold" />
-        </button>
-      </div>
-    </div>
-
-    {#if filterOpen}
-      <div class="filter-bar">
-        <button
-          type="button"
-          class="filter-chip"
-          class:selected={filterFavorites}
-          onclick={() => {
-            filterFavorites = !filterFavorites;
-          }}
-        >
-          favorites
-        </button>
-        <div class="filter-select-wrap">
-          <Select
-            class="filter-select"
-            value={filterCollectionId}
-            options={collectionFilterOptions(collections)}
-            placeholder="all collections"
-            onValueChange={(value) => {
-              filterCollectionId = value;
-            }}
+    <main class="page-body">
+      <div class="toolbar">
+        <div class="search-wrap">
+          <span class="search-icon">
+            <MagnifyingGlassIcon size={16} weight="regular" />
+          </span>
+          <input
+            class="search-input"
+            type="search"
+            placeholder="search titles..."
+            bind:value={searchQuery}
           />
         </div>
-        {#if searchQuery || filterFavorites || filterCollectionId}
+        <div class="toolbar-actions">
+          <button
+            type="button"
+            class="sort-btn"
+            class:active={sortMode === "title"}
+            onclick={() => setSort("title")}
+          >
+            title
+          </button>
+          <button
+            type="button"
+            class="sort-btn"
+            class:active={sortMode === "updated"}
+            onclick={() => setSort("updated")}
+          >
+            updated
+          </button>
+          <button
+            type="button"
+            class="sort-btn"
+            class:active={sortMode === "added"}
+            onclick={() => setSort("added")}
+          >
+            added
+          </button>
+          <button
+            type="button"
+            class="filter-btn"
+            class:active={filterOpen}
+            onclick={() => {
+              filterOpen = !filterOpen;
+            }}
+            aria-label="Toggle filters"
+          >
+            <FunnelSimpleIcon size={14} weight="bold" />
+          </button>
+        </div>
+      </div>
+
+      {#if filterOpen}
+        <div class="filter-bar">
           <button
             type="button"
             class="filter-chip"
+            class:selected={filterFavorites}
             onclick={() => {
-              searchQuery = "";
-              filterFavorites = false;
-              filterCollectionId = "";
+              filterFavorites = !filterFavorites;
             }}
           >
-            ✕ clear
+            favorites
           </button>
-        {/if}
-      </div>
-    {/if}
-
-    {#if !loading && (searchQuery || filterFavorites || filterCollectionId)}
-      <div class="results-count">
-        {filteredLibraryEntries.length} of {totalTitleCount} title{totalTitleCount !==
-        1
-          ? "s"
-          : ""}
-      </div>
-    {/if}
-
-    {#if loading}
-      <div class="empty-state">loading...</div>
-    {:else if totalTitleCount === 0}
-      <div class="empty-state">
-        no titles tracked yet —
-        <button
-          type="button"
-          class="btn btn-ghost inline-link-button"
-          onclick={() => openDrawer("track")}
-        >
-          add one
-        </button>
-      </div>
-    {:else if filteredLibraryEntries.length === 0}
-      <div class="empty-state">no titles match filters</div>
-    {:else}
-      <div class="book-list">
-        {#each filteredLibraryEntries as entry (`${entry.kind}:${entry.id}`)}
-          {#if entry.kind === "tracked"}
-            <div
-              class="book-item"
-              class:book-item--current={currentSyncedBookId ===
-                entry.book.book_id}
-              role="button"
-              tabindex="0"
-              onclick={() => openBookDrawer(entry.book.book_id)}
-              onkeydown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  openBookDrawer(entry.book.book_id);
-                }
+          <div class="filter-select-wrap">
+            <Select
+              class="filter-select"
+              value={filterCollectionId}
+              options={collectionFilterOptions(collections)}
+              placeholder="all collections"
+              onValueChange={(value) => {
+                filterCollectionId = value;
+              }}
+            />
+          </div>
+          {#if searchQuery || filterFavorites || filterCollectionId}
+            <button
+              type="button"
+              class="filter-chip"
+              onclick={() => {
+                searchQuery = "";
+                filterFavorites = false;
+                filterCollectionId = "";
               }}
             >
-              <div class="book-cover-shell">
-                {#if coverUrl(entry.book)}
-                  <img
-                    class="book-cover"
-                    src={coverUrl(entry.book) ?? undefined}
-                    alt={`Cover for ${entry.book.title}`}
-                    loading="lazy"
-                  />
-                {:else}
-                  <div class="book-cover book-cover--empty">
-                    <span>{entry.book.title.slice(0, 1)}</span>
-                  </div>
-                {/if}
-              </div>
+              ✕ clear
+            </button>
+          {/if}
+        </div>
+      {/if}
 
-              <div class="book-main">
-                <div class="book-title-area">
-                  <div class="book-name">{entry.book.title}</div>
-                  <div class="book-author">
-                    {entry.book.author ?? "unknown creator"}
-                  </div>
+      {#if !loading && (searchQuery || filterFavorites || filterCollectionId)}
+        <div class="results-count">
+          {filteredLibraryEntries.length} of {totalTitleCount} title{totalTitleCount !==
+          1
+            ? "s"
+            : ""}
+        </div>
+      {/if}
+
+      {#if loading}
+        <div class="empty-state">loading...</div>
+      {:else if totalTitleCount === 0}
+        <div class="empty-state">
+          no titles tracked yet —
+          <button
+            type="button"
+            class="btn btn-ghost inline-link-button"
+            onclick={() => openDrawer("track")}
+          >
+            add one
+          </button>
+        </div>
+      {:else if filteredLibraryEntries.length === 0}
+        <div class="empty-state">no titles match filters</div>
+      {:else}
+        <div class="book-list">
+          {#each filteredLibraryEntries as entry (`${entry.kind}:${entry.id}`)}
+            {#if entry.kind === "tracked"}
+              <div
+                class="book-item"
+                class:book-item--current={currentSyncedBookId ===
+                  entry.book.book_id}
+                role="button"
+                tabindex="0"
+                onclick={() => openBookDrawer(entry.book.book_id)}
+                onkeydown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openBookDrawer(entry.book.book_id);
+                  }
+                }}
+              >
+                <div class="book-cover-shell">
+                  {#if coverUrl(entry.book)}
+                    <img
+                      class="book-cover"
+                      src={coverUrl(entry.book) ?? undefined}
+                      alt={`Cover for ${entry.book.title}`}
+                      loading="lazy"
+                    />
+                  {:else}
+                    <div class="book-cover book-cover--empty">
+                      <span>{entry.book.title.slice(0, 1)}</span>
+                    </div>
+                  {/if}
                 </div>
 
-                <div class="book-meta-row">
-                  <div class="book-meta-stats">
-                    {#if entry.book.is_favorite}
-                      <span class="book-favorite" aria-label="Favorite">
-                        <HeartStraightIcon size={12} weight="fill" />
-                      </span>
-                    {/if}
-                    {#if entry.book.rating}
-                      <StarRating value={entry.book.rating} size={11} />
-                    {/if}
-                    <span class="book-chip"
-                      >{entry.book.enabled
-                        ? entry.book.known_remote_chapters
-                        : entry.book.available_chapters} ch</span
-                    >
-                    {#if entry.book.last_remote_chapter_key}
+                <div class="book-main">
+                  <div class="book-title-area">
+                    <div class="book-name">{entry.book.title}</div>
+                    <div class="book-author">
+                      {entry.book.author ?? "unknown creator"}
+                    </div>
+                  </div>
+
+                  <div class="book-meta-row">
+                    <div class="book-meta-stats">
+                      {#if entry.book.is_favorite}
+                        <span class="book-favorite" aria-label="Favorite">
+                          <HeartStraightIcon size={12} weight="fill" />
+                        </span>
+                      {/if}
+                      {#if entry.book.rating}
+                        <StarRating value={entry.book.rating} size={11} />
+                      {/if}
                       <span class="book-chip"
-                        >{entry.book.last_remote_chapter_key}</span
+                        >{entry.book.enabled
+                          ? entry.book.known_remote_chapters
+                          : entry.book.available_chapters} ch</span
                       >
-                    {/if}
-                    {#if linkedDeviceProgressByBook.has(entry.book.book_id)}
-                      <span class="book-chip book-chip--live"
-                        >{formatPercent(
-                          linkedDeviceProgressByBook.get(entry.book.book_id) ??
-                            null,
-                        )} read</span
-                      >
-                    {/if}
-                    {#if entry.book.latestArtifact}
-                      <span class="book-chip"
-                        >{formatBytes(
-                          entry.book.latestArtifact.file_size_bytes,
+                      {#if entry.book.last_remote_chapter_key}
+                        <span class="book-chip"
+                          >{entry.book.last_remote_chapter_key}</span
+                        >
+                      {/if}
+                      {#if linkedDeviceProgressByBook.has(entry.book.book_id)}
+                        <span class="book-chip book-chip--live"
+                          >{formatPercent(
+                            linkedDeviceProgressByBook.get(
+                              entry.book.book_id,
+                            ) ?? null,
+                          )} read</span
+                        >
+                      {/if}
+                      {#if entry.book.latestArtifact}
+                        <span class="book-chip"
+                          >{formatBytes(
+                            entry.book.latestArtifact.file_size_bytes,
+                          )}</span
+                        >
+                      {:else if bookSyncLabel(entry.book.book_id)}
+                        <span class="book-chip book-chip--live"
+                          >{bookSyncLabel(entry.book.book_id)}</span
+                        >
+                      {:else}
+                        <span class="book-chip book-chip-muted">no epub</span>
+                      {/if}
+                      <span class="book-dot">·</span>
+                      <span class="book-timestamp"
+                        >updated {formatDate(
+                          entry.book.last_chapter_added_at ??
+                            entry.book.created_at,
                         )}</span
                       >
-                    {:else if bookSyncLabel(entry.book.book_id)}
-                      <span class="book-chip book-chip--live"
-                        >{bookSyncLabel(entry.book.book_id)}</span
-                      >
-                    {:else}
-                      <span class="book-chip book-chip-muted">no epub</span>
-                    {/if}
-                    <span class="book-dot">·</span>
-                    <span class="book-timestamp"
-                      >updated {formatDate(entry.book.last_chapter_added_at ?? entry.book.created_at)}</span
-                    >
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          {:else}
-            <div
-              class="book-item book-item--device"
-              role="button"
-              tabindex="0"
-              onclick={() => openKOReaderDocumentDrawer(entry.document.id)}
-              onkeydown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  openKOReaderDocumentDrawer(entry.document.id);
-                }
-              }}
-            >
-              <div class="book-cover-shell">
-                <div class="book-cover book-cover--empty book-cover--device">
-                  <span>KO</span>
-                </div>
-              </div>
-
-              <div class="book-main">
-                <div class="book-title-area">
-                  <div class="book-name">{entry.title}</div>
-                  <div class="book-author">
-                    {entry.author ?? "manual device title"}
-                  </div>
-                </div>
-
-                <div class="book-meta-row">
-                  <div class="book-meta-stats">
-                    <span class="book-chip book-chip--device"
-                      >{entry.document.device ?? "device"}</span
-                    >
-                    <span class="book-chip book-chip--live"
-                      >{formatPercent(entry.document.progress_percent)} read</span
-                    >
-                    <span class="book-chip">{entry.document.username}</span>
-                    <span class="book-dot">·</span>
-                    <span class="book-timestamp"
-                      >synced {formatTimestamp(
-                        entry.document.progress_timestamp,
-                      )}</span
-                    >
-                  </div>
-                </div>
-              </div>
-            </div>
-          {/if}
-        {/each}
-      </div>
-    {/if}
-  </main>
-
-  {#if drawerOpen}
-    <div
-      class="drawer-backdrop"
-      class:closing={drawerClosing}
-      role="button"
-      tabindex="-1"
-      aria-label="Close drawer"
-      onclick={closeDrawer}
-      onkeydown={(event) => {
-        if (event.key === "Escape") closeDrawer();
-      }}
-    ></div>
-
-    <div class="drawer-shell" class:closing={drawerClosing}>
-      <div
-        class="drawer"
-        class:closing={drawerClosing}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div class="drawer-handle"><div class="drawer-handle-bar"></div></div>
-        <div class="drawer-header">
-          {#if drawerBook}
-            <div class="drawer-title-block">
-              <div class="drawer-title">{drawerBook.title}</div>
-              <div class="drawer-subtitle">
-                {drawerBook.author ?? "unknown creator"}
-              </div>
-            </div>
-          {:else if drawerKOReaderDocument}
-            <div class="drawer-title-block">
-              <div class="drawer-title">
-                {drawerKOReaderDocument.title ??
-                  `document ${drawerKOReaderDocument.document_hash.slice(0, 8)}`}
-              </div>
-              <div class="drawer-subtitle">
-                {drawerKOReaderDocument.author ?? "manual device title"}
-              </div>
-            </div>
-          {:else}
-            <span class="drawer-title">
-              {#if drawerTab === "track"}add title
-              {:else if drawerTab === "auth"}ranobelib auth
-              {:else if drawerTab === "jobs"}recent jobs
-              {:else if drawerTab === "library"}collections
-              {:else if drawerTab === "metadata"}opds metadata
-              {:else if drawerTab === "device"}koreader sync
-              {:else}title controls{/if}
-            </span>
-          {/if}
-          <button type="button" class="drawer-close" onclick={closeDrawer}
-            >✕</button
-          >
-        </div>
-
-        <div class="drawer-panel">
-          {#if drawerTab === "track"}
-            <div class="drawer-body">
-              <div class="form-field">
-                <label for="book-url" class="form-label">ranobelib url</label>
-                <input
-                  id="book-url"
-                  class="form-input"
-                  type="url"
-                  placeholder="https://ranobelib.me/ru/book/..."
-                  bind:value={bookUrl}
-                  oninput={() => clearPreview()}
-                />
-              </div>
-
-              <button
-                type="button"
-                class="btn btn-outline full-width-btn"
-                disabled={previewing || !bookUrl.trim()}
-                onclick={() => void inspectBookUrl()}
+            {:else}
+              <div
+                class="book-item book-item--device"
+                role="button"
+                tabindex="0"
+                onclick={() => openKOReaderDocumentDrawer(entry.document.id)}
+                onkeydown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openKOReaderDocumentDrawer(entry.document.id);
+                  }
+                }}
               >
-                {previewing ? "loading title..." : "inspect title"}
-              </button>
+                <div class="book-cover-shell">
+                  <div class="book-cover book-cover--empty book-cover--device">
+                    <span>KO</span>
+                  </div>
+                </div>
 
-              {#if preview}
-                <div class="preview-card">
-                  <div class="preview-cover-shell">
-                    {#if preview.cover_url}
-                      <img
-                        class="preview-cover"
-                        src={preview.cover_url}
-                        alt={`Cover for ${preview.title}`}
-                      />
+                <div class="book-main">
+                  <div class="book-title-area">
+                    <div class="book-name">{entry.title}</div>
+                    <div class="book-author">
+                      {entry.author ?? "manual device title"}
+                    </div>
+                  </div>
+
+                  <div class="book-meta-row">
+                    <div class="book-meta-stats">
+                      <span class="book-chip book-chip--device"
+                        >{entry.document.device ?? "device"}</span
+                      >
+                      <span class="book-chip book-chip--live"
+                        >{formatPercent(entry.document.progress_percent)} read</span
+                      >
+                      <span class="book-chip">{entry.document.username}</span>
+                      <span class="book-dot">·</span>
+                      <span class="book-timestamp"
+                        >synced {formatTimestamp(
+                          entry.document.progress_timestamp,
+                        )}</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {/if}
+          {/each}
+        </div>
+      {/if}
+    </main>
+
+    {#if drawerOpen}
+      <div
+        class="drawer-backdrop"
+        class:closing={drawerClosing}
+        role="button"
+        tabindex="-1"
+        aria-label="Close drawer"
+        onclick={closeDrawer}
+        onkeydown={(event) => {
+          if (event.key === "Escape") closeDrawer();
+        }}
+      ></div>
+
+      <div class="drawer-shell" class:closing={drawerClosing}>
+        <div
+          class="drawer"
+          class:closing={drawerClosing}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div class="drawer-handle"><div class="drawer-handle-bar"></div></div>
+          <div class="drawer-header">
+            {#if drawerBook}
+              <div class="drawer-title-block">
+                <div class="drawer-title">{drawerBook.title}</div>
+                <div class="drawer-subtitle">
+                  {drawerBook.author ?? "unknown creator"}
+                </div>
+              </div>
+            {:else if drawerKOReaderDocument}
+              <div class="drawer-title-block">
+                <div class="drawer-title">
+                  {drawerKOReaderDocument.title ??
+                    `document ${drawerKOReaderDocument.document_hash.slice(0, 8)}`}
+                </div>
+                <div class="drawer-subtitle">
+                  {drawerKOReaderDocument.author ?? "manual device title"}
+                </div>
+              </div>
+            {:else}
+              <span class="drawer-title">
+                {#if drawerTab === "track"}add title
+                {:else if drawerTab === "auth"}ranobelib auth
+                {:else if drawerTab === "jobs"}recent jobs
+                {:else if drawerTab === "library"}collections
+                {:else if drawerTab === "metadata"}opds metadata
+                {:else if drawerTab === "device"}koreader sync
+                {:else}title controls{/if}
+              </span>
+            {/if}
+            <button type="button" class="drawer-close" onclick={closeDrawer}
+              >✕</button
+            >
+          </div>
+
+          <div class="drawer-panel">
+            {#if drawerTab === "track"}
+              <div class="drawer-body">
+                <div class="form-field">
+                  <label for="book-url" class="form-label">ranobelib url</label>
+                  <input
+                    id="book-url"
+                    class="form-input"
+                    type="url"
+                    placeholder="https://ranobelib.me/ru/book/..."
+                    bind:value={bookUrl}
+                    oninput={() => clearPreview()}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  class="btn btn-outline full-width-btn"
+                  disabled={previewing || !bookUrl.trim()}
+                  onclick={() => void inspectBookUrl()}
+                >
+                  {previewing ? "loading title..." : "inspect title"}
+                </button>
+
+                {#if preview}
+                  <div class="preview-card">
+                    <div class="preview-cover-shell">
+                      {#if preview.cover_url}
+                        <img
+                          class="preview-cover"
+                          src={preview.cover_url}
+                          alt={`Cover for ${preview.title}`}
+                        />
+                      {:else}
+                        <div class="preview-cover preview-cover--empty">
+                          <span>{preview.title.slice(0, 1)}</span>
+                        </div>
+                      {/if}
+                    </div>
+                    <div class="preview-copy">
+                      <div class="preview-title">{preview.title}</div>
+                      <div class="preview-author">
+                        {preview.author ?? "unknown creator"}
+                      </div>
+                      <div class="preview-meta">
+                        {preview.available_chapters} chapters ready
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="branch-select" class="form-label">branch</label>
+                    <Select
+                      id="branch-select"
+                      class="form-select"
+                      bind:value={selectedBranchId}
+                      options={branchOptions(preview.branches)}
+                      placeholder="default branch"
+                    />
+                  </div>
+                {/if}
+
+                <button
+                  type="button"
+                  class="btn btn-solid full-width-btn"
+                  disabled={submitting || !bookUrl.trim() || !preview}
+                  onclick={() => void submitBook()}
+                >
+                  {submitting ? "queueing..." : "track and build"}
+                </button>
+
+                <div class="form-field">
+                  <label for="epub-upload" class="form-label">epub files</label>
+                  <input
+                    id="epub-upload"
+                    bind:this={epubUploadInput}
+                    class="sr-only-upload"
+                    type="file"
+                    accept=".epub,application/epub+zip"
+                    multiple
+                    onchange={(event) =>
+                      setUploadedEpubFiles(
+                        (event.currentTarget as HTMLInputElement).files,
+                      )}
+                  />
+                  <button
+                    type="button"
+                    class="upload-picker"
+                    onclick={() => epubUploadInput?.click()}
+                  >
+                    <div class="upload-picker-copy">
+                      {#if uploadedEpubFiles.length > 0}
+                        <span class="upload-picker-count">
+                          {uploadedEpubFiles.length} file{uploadedEpubFiles.length !==
+                          1
+                            ? "s"
+                            : ""}
+                        </span>
+                        <span class="upload-picker-hint">
+                          {uploadedEpubFiles[0].name}
+                          {#if uploadedEpubFiles.length > 1}
+                            + {uploadedEpubFiles.length - 1} more
+                          {/if}
+                        </span>
+                      {:else}
+                        <span class="upload-picker-count"
+                          >no files selected</span
+                        >
+                        <span class="upload-picker-hint">
+                          select one or more local epubs
+                        </span>
+                      {/if}
+                    </div>
+                    <span class="upload-picker-action">
+                      {uploadedEpubFiles.length > 0
+                        ? "change files"
+                        : "choose files"}
+                    </span>
+                  </button>
+                </div>
+
+                {#if uploadedEpubFiles.length > 0}
+                  <div class="drawer-section">
+                    <div class="drawer-section-label">
+                      {uploadedEpubFiles.length} selected
+                    </div>
+                    <div class="drawer-file-list">
+                      {#each uploadedEpubFiles as file}
+                        <div class="drawer-file-item">{file.name}</div>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+
+                <button
+                  type="button"
+                  class="btn btn-outline full-width-btn"
+                  disabled={uploadingEpubs || uploadedEpubFiles.length === 0}
+                  onclick={() => void submitUploadedEpubs()}
+                >
+                  {uploadingEpubs ? "importing..." : "import epubs"}
+                </button>
+              </div>
+            {:else if drawerTab === "auth"}
+              <div class="drawer-body">
+                <div class="status-row">
+                  <div class="status-cell">
+                    <div class="status-cell-label">access</div>
+                    <div
+                      class="status-cell-value"
+                      class:active={credential?.has_access_token}
+                    >
+                      {credential?.has_access_token ? "stored" : "missing"}
+                    </div>
+                  </div>
+                  <div class="status-cell">
+                    <div class="status-cell-label">refresh</div>
+                    <div
+                      class="status-cell-value"
+                      class:active={credential?.has_refresh_token}
+                    >
+                      {credential?.has_refresh_token ? "stored" : "missing"}
+                    </div>
+                  </div>
+                  <div class="status-cell">
+                    <div class="status-cell-label">remote</div>
+                    <div
+                      class="status-cell-value"
+                      class:active={validation?.valid}
+                      class:error={validation && !validation.valid}
+                    >
+                      {validation?.valid
+                        ? "valid"
+                        : validation
+                          ? "failed"
+                          : "idle"}
+                    </div>
+                  </div>
+                </div>
+
+                {#if validation?.username || validation?.email}
+                  <div class="auth-user-copy">
+                    logged in as {validation.username ?? validation.email}
+                  </div>
+                {/if}
+
+                {#if authSession?.authenticated}
+                  <div class="auth-user-copy">
+                    browser session: {authSession.username}
+                  </div>
+                {/if}
+
+                <div class="form-field">
+                  <label for="access-token" class="form-label"
+                    >access token</label
+                  >
+                  <textarea
+                    id="access-token"
+                    class="form-textarea"
+                    placeholder="paste bearer token"
+                    bind:value={accessToken}
+                  ></textarea>
+                </div>
+                <div class="form-field">
+                  <label for="refresh-token" class="form-label"
+                    >refresh token</label
+                  >
+                  <textarea
+                    id="refresh-token"
+                    class="form-textarea"
+                    placeholder="paste refresh token"
+                    bind:value={refreshToken}
+                  ></textarea>
+                </div>
+                <div class="drawer-inline-actions">
+                  <button
+                    type="button"
+                    class="btn btn-outline"
+                    disabled={validating}
+                    onclick={() => void runValidation()}
+                  >
+                    {validating ? "checking..." : "validate"}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-solid"
+                    disabled={submitting}
+                    onclick={() => void saveCredential()}
+                  >
+                    {submitting ? "saving..." : "save tokens"}
+                  </button>
+                </div>
+
+                {#if authSession?.authenticated}
+                  <button
+                    type="button"
+                    class="btn btn-ghost full-width-btn"
+                    onclick={() => void signOutBrowserSession()}
+                  >
+                    sign out browser session
+                  </button>
+                {/if}
+              </div>
+            {:else if drawerTab === "jobs"}
+              <div class="drawer-body">
+                {#if jobs.length === 0}
+                  <div class="drawer-empty-copy">no jobs yet</div>
+                {:else}
+                  {#each jobs as job}
+                    <div class="job-row">
+                      <div>
+                        <div class="job-type">
+                          {jobTypeLabel(job.type)} · {jobTriggerLabel(
+                            job.trigger,
+                          )}
+                        </div>
+                        <div class="job-book-title">
+                          {job.book_title ?? "library task"}
+                        </div>
+                        <div class="job-status {job.status}">{job.status}</div>
+                      </div>
+                      <div class="job-time">{formatDate(job.created_at)}</div>
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            {:else if drawerTab === "library"}
+              <div class="drawer-body">
+                <div class="form-field">
+                  <label for="collection-name" class="form-label"
+                    >new collection</label
+                  >
+                  <input
+                    id="collection-name"
+                    class="form-input"
+                    type="text"
+                    placeholder="favorites, backlog, weekend..."
+                    bind:value={collectionName}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  class="btn btn-solid full-width-btn"
+                  disabled={savingCollection || !collectionName.trim()}
+                  onclick={() => void createLibraryCollection()}
+                >
+                  {savingCollection ? "creating..." : "create collection"}
+                </button>
+
+                <div class="drawer-section">
+                  <div class="drawer-section-label">collections</div>
+                  {#if collections.length === 0}
+                    <div class="drawer-empty-copy">no collections yet</div>
+                  {:else}
+                    <div class="collection-list">
+                      {#each collections as collection}
+                        <div class="collection-row">
+                          <div>
+                            <div class="collection-name">{collection.name}</div>
+                            <div class="collection-meta">
+                              {collection.book_count} title{collection.book_count !==
+                              1
+                                ? "s"
+                                : ""}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            class="btn btn-danger btn-compact collection-delete-btn"
+                            onclick={() => {
+                              collectionDeleteCandidate = collection;
+                            }}
+                          >
+                            delete
+                          </button>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {:else if drawerTab === "metadata"}
+              <div class="drawer-body">
+                <div class="drawer-section">
+                  <div class="drawer-section-label">visible genres in opds</div>
+                  <div class="chip-grid">
+                    {#if opdsVisibility?.genres.length}
+                      {#each opdsVisibility.genres as genre}
+                        <button
+                          type="button"
+                          class="filter-chip"
+                          class:selected={pendingVisibleGenreSlugs.includes(
+                            genre.slug,
+                          )}
+                          onclick={() => toggleNamedValue("genre", genre)}
+                        >
+                          {genre.name}
+                        </button>
+                      {/each}
                     {:else}
-                      <div class="preview-cover preview-cover--empty">
-                        <span>{preview.title.slice(0, 1)}</span>
+                      <div class="drawer-empty-copy">
+                        no genres discovered yet
                       </div>
                     {/if}
                   </div>
-                  <div class="preview-copy">
-                    <div class="preview-title">{preview.title}</div>
-                    <div class="preview-author">
-                      {preview.author ?? "unknown creator"}
+                </div>
+
+                <div class="drawer-section">
+                  <div class="drawer-section-label">visible tags in opds</div>
+                  <div class="chip-grid">
+                    {#if opdsVisibility?.tags.length}
+                      {#each opdsVisibility.tags as tag}
+                        <button
+                          type="button"
+                          class="filter-chip"
+                          class:selected={pendingVisibleTagSlugs.includes(
+                            tag.slug,
+                          )}
+                          onclick={() => toggleNamedValue("tag", tag)}
+                        >
+                          {tag.name}
+                        </button>
+                      {/each}
+                    {:else}
+                      <div class="drawer-empty-copy">
+                        no tags discovered yet
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  class="btn btn-solid full-width-btn"
+                  disabled={savingOpdsVisibility}
+                  onclick={() => void saveOpdsVisibility()}
+                >
+                  {savingOpdsVisibility ? "saving..." : "save visibility"}
+                </button>
+              </div>
+            {:else if drawerTab === "device"}
+              <div class="drawer-body">
+                <div class="drawer-section">
+                  {#if (koreaderState?.documents.length ?? 0) === 0}
+                    <div class="drawer-empty-copy">
+                      no KOReader progress synced yet
                     </div>
-                    <div class="preview-meta">
-                      {preview.available_chapters} chapters ready
+                  {:else}
+                    <div class="device-list">
+                      {#each koreaderState?.documents ?? [] as item}
+                        <button
+                          type="button"
+                          class="device-row device-row-button"
+                          onclick={() => {
+                            selectedKOReaderDocumentId = item.id;
+                          }}
+                        >
+                          <div>
+                            <div class="collection-name">
+                              {item.title ??
+                                item.linked_book_title ??
+                                `document ${item.document_hash.slice(0, 8)}`}
+                            </div>
+                            <div class="collection-meta">
+                              {#if item.linked_book_title}
+                                linked to {item.linked_book_title}
+                              {:else}
+                                {item.username} · {item.document_hash.slice(
+                                  0,
+                                  12,
+                                )}
+                              {/if}
+                            </div>
+                          </div>
+                          <div class="device-side">
+                            <div class="device-progress">
+                              {formatPercent(item.progress_percent)}
+                            </div>
+                            <div class="collection-meta">
+                              {formatTimestamp(item.progress_timestamp)}
+                            </div>
+                          </div>
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+
+                {#if selectedKOReaderDocument}
+                  <div class="drawer-section">
+                    <div class="drawer-section-label">edit synced title</div>
+                    <div class="form-field">
+                      <label for="koreader-document-title" class="form-label"
+                        >title</label
+                      >
+                      <input
+                        id="koreader-document-title"
+                        class="form-input"
+                        type="text"
+                        bind:value={koreaderDocumentTitle}
+                      />
+                    </div>
+                    <div class="form-field">
+                      <label for="koreader-document-author" class="form-label"
+                        >author</label
+                      >
+                      <input
+                        id="koreader-document-author"
+                        class="form-input"
+                        type="text"
+                        bind:value={koreaderDocumentAuthor}
+                      />
+                    </div>
+                    <div class="form-field">
+                      <label for="koreader-link-book" class="form-label"
+                        >link to tracked title</label
+                      >
+                      <Select
+                        id="koreader-link-book"
+                        class="form-select"
+                        bind:value={koreaderLinkedBookId}
+                        options={koreaderLinkOptions(books)}
+                        placeholder="unlinked"
+                      />
+                    </div>
+                    <div class="auth-user-copy">
+                      {selectedKOReaderDocument.username} · {selectedKOReaderDocument.document_hash}
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-solid full-width-btn"
+                      disabled={savingKoreaderDocument}
+                      onclick={() => void saveKOReaderDocument()}
+                    >
+                      {savingKoreaderDocument
+                        ? "saving..."
+                        : "save synced title"}
+                    </button>
+                  </div>
+                {/if}
+              </div>
+            {:else if drawerTab === "koreader-document" && drawerKOReaderDocument}
+              <div class="drawer-body">
+                <div class="status-row">
+                  <div class="status-cell">
+                    <div class="status-cell-label">progress</div>
+                    <div class="status-cell-value active">
+                      {formatPercent(drawerKOReaderDocument.progress_percent)}
+                    </div>
+                  </div>
+                  <div class="status-cell">
+                    <div class="status-cell-label">device</div>
+                    <div class="status-cell-value">
+                      {drawerKOReaderDocument.device ?? "unknown"}
+                    </div>
+                  </div>
+                  <div class="status-cell">
+                    <div class="status-cell-label">user</div>
+                    <div class="status-cell-value active">
+                      {drawerKOReaderDocument.username}
                     </div>
                   </div>
                 </div>
 
                 <div class="form-field">
-                  <label for="branch-select" class="form-label">branch</label>
-                  <Select
-                    id="branch-select"
-                    class="form-select"
-                    bind:value={selectedBranchId}
-                    options={branchOptions(preview.branches)}
-                    placeholder="default branch"
+                  <label for="drawer-koreader-document-title" class="form-label"
+                    >title</label
+                  >
+                  <input
+                    id="drawer-koreader-document-title"
+                    class="form-input"
+                    type="text"
+                    bind:value={koreaderDocumentTitle}
                   />
                 </div>
-              {/if}
-
-              <button
-                type="button"
-                class="btn btn-solid full-width-btn"
-                disabled={submitting || !bookUrl.trim() || !preview}
-                onclick={() => void submitBook()}
-              >
-                {submitting ? "queueing..." : "track and build"}
-              </button>
-
-              <div class="drawer-divider">or import local epubs</div>
-
-              <div class="form-field">
-                <label for="epub-upload" class="form-label">epub files</label>
-                <input
-                  id="epub-upload"
-                  bind:this={epubUploadInput}
-                  class="sr-only-upload"
-                  type="file"
-                  accept=".epub,application/epub+zip"
-                  multiple
-                  onchange={(event) =>
-                    setUploadedEpubFiles(
-                      (event.currentTarget as HTMLInputElement).files,
-                    )}
-                />
-                <button
-                  type="button"
-                  class="upload-picker"
-                  onclick={() => epubUploadInput?.click()}
-                >
-                  <div class="upload-picker-copy">
-                    {#if uploadedEpubFiles.length > 0}
-                      <span class="upload-picker-count">
-                        {uploadedEpubFiles.length} file{uploadedEpubFiles.length !== 1
-                          ? "s"
-                          : ""}
-                      </span>
-                      <span class="upload-picker-hint">
-                        {uploadedEpubFiles[0].name}
-                        {#if uploadedEpubFiles.length > 1}
-                          + {uploadedEpubFiles.length - 1} more
-                        {/if}
-                      </span>
-                    {:else}
-                      <span class="upload-picker-count">no files selected</span>
-                      <span class="upload-picker-hint">
-                        select one or more local epubs
-                      </span>
-                    {/if}
-                  </div>
-                  <span class="upload-picker-action">
-                    {uploadedEpubFiles.length > 0 ? "change files" : "choose files"}
-                  </span>
-                </button>
-              </div>
-
-              {#if uploadedEpubFiles.length > 0}
-                <div class="drawer-section">
-                  <div class="drawer-section-label">
-                    {uploadedEpubFiles.length} selected
-                  </div>
-                  <div class="drawer-file-list">
-                    {#each uploadedEpubFiles as file}
-                      <div class="drawer-file-item">{file.name}</div>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-
-              <button
-                type="button"
-                class="btn btn-outline full-width-btn"
-                disabled={uploadingEpubs || uploadedEpubFiles.length === 0}
-                onclick={() => void submitUploadedEpubs()}
-              >
-                {uploadingEpubs ? "importing..." : "import epubs"}
-              </button>
-            </div>
-          {:else if drawerTab === "auth"}
-            <div class="drawer-body">
-              <div class="status-row">
-                <div class="status-cell">
-                  <div class="status-cell-label">access</div>
-                  <div
-                    class="status-cell-value"
-                    class:active={credential?.has_access_token}
+                <div class="form-field">
+                  <label
+                    for="drawer-koreader-document-author"
+                    class="form-label">author</label
                   >
-                    {credential?.has_access_token ? "stored" : "missing"}
-                  </div>
+                  <input
+                    id="drawer-koreader-document-author"
+                    class="form-input"
+                    type="text"
+                    bind:value={koreaderDocumentAuthor}
+                  />
                 </div>
-                <div class="status-cell">
-                  <div class="status-cell-label">refresh</div>
-                  <div
-                    class="status-cell-value"
-                    class:active={credential?.has_refresh_token}
+                <div class="form-field">
+                  <label for="drawer-koreader-link-book" class="form-label"
+                    >link to tracked title</label
                   >
-                    {credential?.has_refresh_token ? "stored" : "missing"}
-                  </div>
+                  <Select
+                    id="drawer-koreader-link-book"
+                    class="form-select"
+                    bind:value={koreaderLinkedBookId}
+                    options={koreaderLinkOptions(books)}
+                    placeholder="unlinked"
+                  />
                 </div>
-                <div class="status-cell">
-                  <div class="status-cell-label">remote</div>
-                  <div
-                    class="status-cell-value"
-                    class:active={validation?.valid}
-                    class:error={validation && !validation.valid}
-                  >
-                    {validation?.valid
-                      ? "valid"
-                      : validation
-                        ? "failed"
-                        : "idle"}
-                  </div>
-                </div>
-              </div>
-
-              {#if validation?.username || validation?.email}
                 <div class="auth-user-copy">
-                  logged in as {validation.username ?? validation.email}
+                  {drawerKOReaderDocument.username} · {drawerKOReaderDocument.document_hash}
                 </div>
-              {/if}
-
-              {#if authSession?.authenticated}
-                <div class="auth-user-copy">
-                  browser session: {authSession.username}
+                <button
+                  type="button"
+                  class="btn btn-solid full-width-btn"
+                  disabled={savingKoreaderDocument}
+                  onclick={() => void saveKOReaderDocument()}
+                >
+                  {savingKoreaderDocument ? "saving..." : "save synced title"}
+                </button>
+              </div>
+            {:else if drawerBook}
+              <div class="drawer-body">
+                <div class="form-field">
+                  <label for="book-title" class="form-label">title</label>
+                  <input
+                    id="book-title"
+                    class="form-input"
+                    type="text"
+                    bind:value={preferenceTitle}
+                  />
                 </div>
-              {/if}
 
-              <div class="form-field">
-                <label for="access-token" class="form-label">access token</label
-                >
-                <textarea
-                  id="access-token"
-                  class="form-textarea"
-                  placeholder="paste bearer token"
-                  bind:value={accessToken}
-                ></textarea>
-              </div>
-              <div class="form-field">
-                <label for="refresh-token" class="form-label"
-                  >refresh token</label
-                >
-                <textarea
-                  id="refresh-token"
-                  class="form-textarea"
-                  placeholder="paste refresh token"
-                  bind:value={refreshToken}
-                ></textarea>
-              </div>
-              <div class="drawer-inline-actions">
-                <button
-                  type="button"
-                  class="btn btn-outline"
-                  disabled={validating}
-                  onclick={() => void runValidation()}
-                >
-                  {validating ? "checking..." : "validate"}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-solid"
-                  disabled={submitting}
-                  onclick={() => void saveCredential()}
-                >
-                  {submitting ? "saving..." : "save tokens"}
-                </button>
-              </div>
+                <div class="form-field">
+                  <label for="book-author" class="form-label">author</label>
+                  <input
+                    id="book-author"
+                    class="form-input"
+                    type="text"
+                    bind:value={preferenceAuthor}
+                  />
+                </div>
 
-              {#if authSession?.authenticated}
-                <button
-                  type="button"
-                  class="btn btn-ghost full-width-btn"
-                  onclick={() => void signOutBrowserSession()}
-                >
-                  sign out browser session
-                </button>
-              {/if}
-            </div>
-          {:else if drawerTab === "jobs"}
-            <div class="drawer-body">
-              {#if jobs.length === 0}
-                <div class="drawer-empty-copy">no jobs yet</div>
-              {:else}
-                {#each jobs as job}
-                  <div class="job-row">
-                    <div>
-                      <div class="job-type">
-                        {jobTypeLabel(job.type)} · {jobTriggerLabel(
-                          job.trigger,
-                        )}
-                      </div>
-                      <div class="job-book-title">
-                        {job.book_title ?? "library task"}
-                      </div>
-                      <div class="job-status {job.status}">{job.status}</div>
-                    </div>
-                    <div class="job-time">{formatDate(job.created_at)}</div>
+                <div class="form-field">
+                  <div class="rating-row">
+                    <button
+                      type="button"
+                      class="favorite-toggle"
+                      class:active={preferenceIsFavorite}
+                      aria-pressed={preferenceIsFavorite}
+                      aria-label={preferenceIsFavorite
+                        ? "Remove favorite"
+                        : "Mark favorite"}
+                      onclick={() => {
+                        preferenceIsFavorite = !preferenceIsFavorite;
+                      }}
+                    >
+                      <HeartStraightIcon
+                        size={16}
+                        weight={preferenceIsFavorite ? "fill" : "regular"}
+                      />
+                    </button>
+                    <StarPicker
+                      value={preferenceRating ? Number(preferenceRating) : 0}
+                      size={18}
+                      onChange={(value) => {
+                        preferenceRating = value > 0 ? String(value) : "";
+                      }}
+                    />
                   </div>
-                {/each}
-              {/if}
-            </div>
-          {:else if drawerTab === "library"}
-            <div class="drawer-body">
-              <div class="form-field">
-                <label for="collection-name" class="form-label"
-                  >new collection</label
-                >
-                <input
-                  id="collection-name"
-                  class="form-input"
-                  type="text"
-                  placeholder="favorites, backlog, weekend..."
-                  bind:value={collectionName}
-                />
-              </div>
+                </div>
 
-              <button
-                type="button"
-                class="btn btn-solid full-width-btn"
-                disabled={savingCollection || !collectionName.trim()}
-                onclick={() => void createLibraryCollection()}
-              >
-                {savingCollection ? "creating..." : "create collection"}
-              </button>
-
-              <div class="drawer-section">
-                <div class="drawer-section-label">collections</div>
-                {#if collections.length === 0}
-                  <div class="drawer-empty-copy">no collections yet</div>
-                {:else}
-                  <div class="collection-list">
-                    {#each collections as collection}
-                      <div class="collection-row">
-                        <div>
-                          <div class="collection-name">{collection.name}</div>
-                          <div class="collection-meta">
-                            {collection.book_count} title{collection.book_count !==
-                            1
-                              ? "s"
-                              : ""}
-                          </div>
-                        </div>
+                {#if collections.length > 0}
+                  <div class="drawer-section">
+                    <div class="drawer-section-label">collections</div>
+                    <div class="chip-grid">
+                      {#each collections as collection}
                         <button
                           type="button"
-                          class="btn btn-danger btn-compact collection-delete-btn"
-                          onclick={() => {
-                            collectionDeleteCandidate = collection;
-                          }}
+                          class="filter-chip"
+                          class:selected={preferenceCollectionIds.includes(
+                            collection.id,
+                          )}
+                          onclick={() => toggleCollectionValue(collection.id)}
                         >
-                          delete
+                          {collection.name}
                         </button>
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            </div>
-          {:else if drawerTab === "metadata"}
-            <div class="drawer-body">
-              <div class="drawer-section">
-                <div class="drawer-section-label">visible genres in opds</div>
-                <div class="chip-grid">
-                  {#if opdsVisibility?.genres.length}
-                    {#each opdsVisibility.genres as genre}
-                      <button
-                        type="button"
-                        class="filter-chip"
-                        class:selected={pendingVisibleGenreSlugs.includes(
-                          genre.slug,
-                        )}
-                        onclick={() => toggleNamedValue("genre", genre)}
-                      >
-                        {genre.name}
-                      </button>
-                    {/each}
-                  {:else}
-                    <div class="drawer-empty-copy">
-                      no genres discovered yet
+                      {/each}
                     </div>
-                  {/if}
-                </div>
-              </div>
-
-              <div class="drawer-section">
-                <div class="drawer-section-label">visible tags in opds</div>
-                <div class="chip-grid">
-                  {#if opdsVisibility?.tags.length}
-                    {#each opdsVisibility.tags as tag}
-                      <button
-                        type="button"
-                        class="filter-chip"
-                        class:selected={pendingVisibleTagSlugs.includes(
-                          tag.slug,
-                        )}
-                        onclick={() => toggleNamedValue("tag", tag)}
-                      >
-                        {tag.name}
-                      </button>
-                    {/each}
-                  {:else}
-                    <div class="drawer-empty-copy">no tags discovered yet</div>
-                  {/if}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                class="btn btn-solid full-width-btn"
-                disabled={savingOpdsVisibility}
-                onclick={() => void saveOpdsVisibility()}
-              >
-                {savingOpdsVisibility ? "saving..." : "save visibility"}
-              </button>
-            </div>
-          {:else if drawerTab === "device"}
-            <div class="drawer-body">
-              <div class="drawer-section">
-                {#if (koreaderState?.documents.length ?? 0) === 0}
-                  <div class="drawer-empty-copy">
-                    no KOReader progress synced yet
-                  </div>
-                {:else}
-                  <div class="device-list">
-                    {#each koreaderState?.documents ?? [] as item}
-                      <button
-                        type="button"
-                        class="device-row device-row-button"
-                        onclick={() => {
-                          selectedKOReaderDocumentId = item.id;
-                        }}
-                      >
-                        <div>
-                          <div class="collection-name">
-                            {item.title ??
-                              item.linked_book_title ??
-                              `document ${item.document_hash.slice(0, 8)}`}
-                          </div>
-                          <div class="collection-meta">
-                            {#if item.linked_book_title}
-                              linked to {item.linked_book_title}
-                            {:else}
-                              {item.username} · {item.document_hash.slice(
-                                0,
-                                12,
-                              )}
-                            {/if}
-                          </div>
-                        </div>
-                        <div class="device-side">
-                          <div class="device-progress">
-                            {formatPercent(item.progress_percent)}
-                          </div>
-                          <div class="collection-meta">
-                            {formatTimestamp(item.progress_timestamp)}
-                          </div>
-                        </div>
-                      </button>
-                    {/each}
                   </div>
                 {/if}
-              </div>
 
-              {#if selectedKOReaderDocument}
-                <div class="drawer-section">
-                  <div class="drawer-section-label">edit synced title</div>
-                  <div class="form-field">
-                    <label for="koreader-document-title" class="form-label"
-                      >title</label
-                    >
-                    <input
-                      id="koreader-document-title"
-                      class="form-input"
-                      type="text"
-                      bind:value={koreaderDocumentTitle}
-                    />
-                  </div>
-                  <div class="form-field">
-                    <label for="koreader-document-author" class="form-label"
-                      >author</label
-                    >
-                    <input
-                      id="koreader-document-author"
-                      class="form-input"
-                      type="text"
-                      bind:value={koreaderDocumentAuthor}
-                    />
-                  </div>
-                  <div class="form-field">
-                    <label for="koreader-link-book" class="form-label"
-                      >link to tracked title</label
-                    >
-                    <Select
-                      id="koreader-link-book"
-                      class="form-select"
-                      bind:value={koreaderLinkedBookId}
-                      options={koreaderLinkOptions(books)}
-                      placeholder="unlinked"
-                    />
-                  </div>
-                  <div class="auth-user-copy">
-                    {selectedKOReaderDocument.username} · {selectedKOReaderDocument.document_hash}
-                  </div>
-                  <button
-                    type="button"
-                    class="btn btn-solid full-width-btn"
-                    disabled={savingKoreaderDocument}
-                    onclick={() => void saveKOReaderDocument()}
+                <div class="form-field">
+                  <label for="book-comment" class="form-label">comment</label>
+                  <textarea
+                    id="book-comment"
+                    class="form-textarea"
+                    placeholder="private note"
+                    bind:value={preferenceComment}
+                  ></textarea>
+                </div>
+
+                <div class="form-field">
+                  <label for="book-branch-select" class="form-label"
+                    >branch</label
                   >
-                    {savingKoreaderDocument ? "saving..." : "save synced title"}
-                  </button>
-                </div>
-              {/if}
-            </div>
-          {:else if drawerTab === "koreader-document" && drawerKOReaderDocument}
-            <div class="drawer-body">
-              <div class="status-row">
-                <div class="status-cell">
-                  <div class="status-cell-label">progress</div>
-                  <div class="status-cell-value active">
-                    {formatPercent(drawerKOReaderDocument.progress_percent)}
-                  </div>
-                </div>
-                <div class="status-cell">
-                  <div class="status-cell-label">device</div>
-                  <div class="status-cell-value">
-                    {drawerKOReaderDocument.device ?? "unknown"}
-                  </div>
-                </div>
-                <div class="status-cell">
-                  <div class="status-cell-label">user</div>
-                  <div class="status-cell-value active">
-                    {drawerKOReaderDocument.username}
-                  </div>
-                </div>
-              </div>
-
-              <div class="form-field">
-                <label for="drawer-koreader-document-title" class="form-label"
-                  >title</label
-                >
-                <input
-                  id="drawer-koreader-document-title"
-                  class="form-input"
-                  type="text"
-                  bind:value={koreaderDocumentTitle}
-                />
-              </div>
-              <div class="form-field">
-                <label for="drawer-koreader-document-author" class="form-label"
-                  >author</label
-                >
-                <input
-                  id="drawer-koreader-document-author"
-                  class="form-input"
-                  type="text"
-                  bind:value={koreaderDocumentAuthor}
-                />
-              </div>
-              <div class="form-field">
-                <label for="drawer-koreader-link-book" class="form-label"
-                  >link to tracked title</label
-                >
-                <Select
-                  id="drawer-koreader-link-book"
-                  class="form-select"
-                  bind:value={koreaderLinkedBookId}
-                  options={koreaderLinkOptions(books)}
-                  placeholder="unlinked"
-                />
-              </div>
-              <div class="auth-user-copy">
-                {drawerKOReaderDocument.username} · {drawerKOReaderDocument.document_hash}
-              </div>
-              <button
-                type="button"
-                class="btn btn-solid full-width-btn"
-                disabled={savingKoreaderDocument}
-                onclick={() => void saveKOReaderDocument()}
-              >
-                {savingKoreaderDocument ? "saving..." : "save synced title"}
-              </button>
-            </div>
-          {:else if drawerBook}
-            <div class="drawer-body">
-              <div class="form-field">
-                <label for="book-title" class="form-label">title</label>
-                <input
-                  id="book-title"
-                  class="form-input"
-                  type="text"
-                  bind:value={preferenceTitle}
-                />
-              </div>
-
-              <div class="form-field">
-                <label for="book-author" class="form-label">author</label>
-                <input
-                  id="book-author"
-                  class="form-input"
-                  type="text"
-                  bind:value={preferenceAuthor}
-                />
-              </div>
-
-              <div class="form-field">
-                <div class="rating-row">
-                  <button
-                    type="button"
-                    class="favorite-toggle"
-                    class:active={preferenceIsFavorite}
-                    aria-pressed={preferenceIsFavorite}
-                    aria-label={preferenceIsFavorite
-                      ? "Remove favorite"
-                      : "Mark favorite"}
-                    onclick={() => {
-                      preferenceIsFavorite = !preferenceIsFavorite;
-                    }}
-                  >
-                    <HeartStraightIcon
-                      size={16}
-                      weight={preferenceIsFavorite ? "fill" : "regular"}
-                    />
-                  </button>
-                  <StarPicker
-                    value={preferenceRating ? Number(preferenceRating) : 0}
-                    size={18}
-                    onChange={(value) => {
-                      preferenceRating = value > 0 ? String(value) : "";
-                    }}
+                  <Select
+                    id="book-branch-select"
+                    class="form-select"
+                    value={branchSelectValue(drawerBook)}
+                    options={branchOptions(drawerBook.branches)}
+                    placeholder="default branch"
+                    disabled={actionBookId === drawerBook.book_id ||
+                      drawerBook.branches.length === 0}
+                    onValueChange={(value) =>
+                      void changeBookBranch(drawerBook.book_id, value || null)}
                   />
                 </div>
-              </div>
 
-              {#if collections.length > 0}
-                <div class="drawer-section">
-                  <div class="drawer-section-label">collections</div>
-                  <div class="chip-grid">
-                    {#each collections as collection}
-                      <button
-                        type="button"
-                        class="filter-chip"
-                        class:selected={preferenceCollectionIds.includes(
-                          collection.id,
-                        )}
-                        onclick={() => toggleCollectionValue(collection.id)}
-                      >
-                        {collection.name}
-                      </button>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-
-              <div class="form-field">
-                <label for="book-comment" class="form-label">comment</label>
-                <textarea
-                  id="book-comment"
-                  class="form-textarea"
-                  placeholder="private note"
-                  bind:value={preferenceComment}
-                ></textarea>
-              </div>
-
-              <div class="form-field">
-                <label for="book-branch-select" class="form-label">branch</label
-                >
-                <Select
-                  id="book-branch-select"
-                  class="form-select"
-                  value={branchSelectValue(drawerBook)}
-                  options={branchOptions(drawerBook.branches)}
-                  placeholder="default branch"
-                  disabled={actionBookId === drawerBook.book_id ||
-                    drawerBook.branches.length === 0}
-                  onValueChange={(value) =>
-                    void changeBookBranch(drawerBook.book_id, value || null)}
-                />
-              </div>
-
-              <div class="book-drawer-actions">
-                <button
-                  type="button"
-                  class="btn btn-solid"
-                  disabled={savingPreferences}
-                  onclick={() => void saveBookPreferences()}
-                >
-                  save
-                </button>
-                {#if drawerBook.enabled}
+                <div class="book-drawer-actions">
                   <button
                     type="button"
-                    class="btn btn-outline"
-                    disabled={actionBookId === drawerBook.book_id}
-                    onclick={() => void runBookAction(drawerBook.book_id)}
+                    class="btn btn-solid"
+                    disabled={savingPreferences}
+                    onclick={() => void saveBookPreferences()}
                   >
-                    check now
+                    save
                   </button>
-                {/if}
-                {#if artifactUrl(drawerBook)}
-                  <a href={artifactUrl(drawerBook)} class="btn btn-ghost"
-                    >download epub</a
+                  {#if drawerBook.enabled}
+                    <button
+                      type="button"
+                      class="btn btn-outline"
+                      disabled={actionBookId === drawerBook.book_id}
+                      onclick={() => void runBookAction(drawerBook.book_id)}
+                    >
+                      check now
+                    </button>
+                  {/if}
+                  {#if artifactUrl(drawerBook)}
+                    <a href={artifactUrl(drawerBook)} class="btn btn-ghost"
+                      >download epub</a
+                    >
+                  {/if}
+                  <button
+                    type="button"
+                    class="btn btn-danger"
+                    disabled={actionBookId === drawerBook.book_id}
+                    onclick={() => void removeBook(drawerBook)}
                   >
-                {/if}
-                <button
-                  type="button"
-                  class="btn btn-danger"
-                  disabled={actionBookId === drawerBook.book_id}
-                  onclick={() => void removeBook(drawerBook)}
-                >
-                  delete
-                </button>
+                    delete
+                  </button>
+                </div>
               </div>
-            </div>
-          {/if}
+            {/if}
+          </div>
         </div>
       </div>
+    {/if}
+
+    <div class="fab-group">
+      <button
+        type="button"
+        class="fab fab-secondary"
+        onclick={() => openDrawer("jobs")}
+        title="Recent jobs"
+        aria-label="Recent jobs"
+      >
+        <ClockCounterClockwiseIcon size={20} weight="bold" />
+      </button>
+      <button
+        type="button"
+        class="fab fab-secondary"
+        onclick={() => openDrawer("library")}
+        title="Collections"
+        aria-label="Collections"
+      >
+        <BooksIcon size={20} weight="bold" />
+      </button>
+      <button
+        type="button"
+        class="fab fab-secondary"
+        onclick={() => openDrawer("metadata")}
+        title="OPDS metadata"
+        aria-label="OPDS metadata"
+      >
+        <EyeIcon size={20} weight="bold" />
+      </button>
+      <button
+        type="button"
+        class="fab fab-secondary"
+        onclick={() => openDrawer("device")}
+        title="KOReader sync"
+        aria-label="KOReader sync"
+      >
+        <ArrowsClockwiseIcon size={20} weight="bold" />
+      </button>
+      <button
+        type="button"
+        class="fab fab-secondary"
+        onclick={() => openDrawer("auth")}
+        title="Auth settings"
+        aria-label="Auth settings"
+      >
+        <ShieldCheckIcon size={18} weight="bold" />
+      </button>
+      <button
+        type="button"
+        class="fab fab-primary"
+        onclick={() => openDrawer("track")}
+        title="Add title"
+        aria-label="Add a title"
+      >
+        <PlusIcon size={22} weight="bold" />
+      </button>
     </div>
-  {/if}
 
-  <div class="fab-group">
-    <button
-      type="button"
-      class="fab fab-secondary"
-      onclick={() => openDrawer("jobs")}
-      title="Recent jobs"
-      aria-label="Recent jobs"
-    >
-      <ClockCounterClockwiseIcon size={20} weight="bold" />
-    </button>
-    <button
-      type="button"
-      class="fab fab-secondary"
-      onclick={() => openDrawer("library")}
-      title="Collections"
-      aria-label="Collections"
-    >
-      <BooksIcon size={20} weight="bold" />
-    </button>
-    <button
-      type="button"
-      class="fab fab-secondary"
-      onclick={() => openDrawer("metadata")}
-      title="OPDS metadata"
-      aria-label="OPDS metadata"
-    >
-      <EyeIcon size={20} weight="bold" />
-    </button>
-    <button
-      type="button"
-      class="fab fab-secondary"
-      onclick={() => openDrawer("device")}
-      title="KOReader sync"
-      aria-label="KOReader sync"
-    >
-      <ArrowsClockwiseIcon size={20} weight="bold" />
-    </button>
-    <button
-      type="button"
-      class="fab fab-secondary"
-      onclick={() => openDrawer("auth")}
-      title="Auth settings"
-      aria-label="Auth settings"
-    >
-      <ShieldCheckIcon size={18} weight="bold" />
-    </button>
-    <button
-      type="button"
-      class="fab fab-primary"
-      onclick={() => openDrawer("track")}
-      title="Add title"
-      aria-label="Add a title"
-    >
-      <PlusIcon size={22} weight="bold" />
-    </button>
+    <ToastContainer />
+    <ConfirmDialog
+      open={collectionDeleteCandidate !== null}
+      title="delete collection"
+      description={collectionDeleteCandidate
+        ? `Remove "${collectionDeleteCandidate.name}" from the library?`
+        : ""}
+      confirmLabel="delete"
+      cancelLabel="cancel"
+      danger={true}
+      onConfirm={() => void confirmRemoveCollection()}
+      onCancel={() => {
+        collectionDeleteCandidate = null;
+      }}
+    />
   </div>
-
-  <ToastContainer />
-  <ConfirmDialog
-    open={collectionDeleteCandidate !== null}
-    title="delete collection"
-    description={collectionDeleteCandidate
-      ? `Remove "${collectionDeleteCandidate.name}" from the library?`
-      : ""}
-    confirmLabel="delete"
-    cancelLabel="cancel"
-    danger={true}
-    onConfirm={() => void confirmRemoveCollection()}
-    onCancel={() => {
-      collectionDeleteCandidate = null;
-    }}
-  />
-</div>
 {/if}
