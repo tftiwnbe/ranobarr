@@ -1403,6 +1403,13 @@ h4 {
   min-width: 0;
 }
 
+.preview-copy--cover-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
 .preview-title {
   font-size: 15px;
   font-weight: 600;

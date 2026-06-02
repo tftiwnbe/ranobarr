@@ -26,6 +26,7 @@ from .service import (
     track_book,
     import_uploaded_epubs,
     update_book_preferences,
+    update_tracked_book_cover,
     update_tracked_book_branch,
 )
 
@@ -142,6 +143,26 @@ async def update_tracked_book_preferences(
 ) -> TrackedBookDetail:
     try:
         return await update_book_preferences(session, book_id=book_id, request=request)
+    except TrackingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/books/{book_id}/cover", response_model=TrackedBookDetail)
+async def upload_tracked_book_cover(
+    book_id: str,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_database_session),
+) -> TrackedBookDetail:
+    try:
+        filename = file.filename or "cover"
+        media_type = file.content_type or "application/octet-stream"
+        return await update_tracked_book_cover(
+            session,
+            book_id=book_id,
+            filename=filename,
+            content=await file.read(),
+            media_type=media_type,
+        )
     except TrackingError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

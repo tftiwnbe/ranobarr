@@ -285,6 +285,24 @@ export async function updateBookPreferences(bookId: string, payload: BookPrefere
   });
 }
 
+export async function uploadTrackedBookCover(bookId: string, file: File): Promise<TrackedBook> {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+
+  const response = await fetch(`/api/v1/tracking/books/${bookId}/cover`, {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const detail = payload?.detail ?? `Request failed with status ${response.status}`;
+    throw new ApiError(detail, response.status);
+  }
+
+  return (await response.json()) as TrackedBook;
+}
+
 export async function triggerCheck(bookId: string): Promise<void> {
   await apiFetch(`/api/v1/tracking/books/${bookId}/check`, {
     method: "POST"

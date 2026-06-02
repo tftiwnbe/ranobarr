@@ -1,5 +1,6 @@
 import json
 import logging
+import mimetypes
 import re
 import tempfile
 from hashlib import sha1, sha256
@@ -329,6 +330,16 @@ def slugify_metadata_name(value: str) -> str:
         return slug
     digest = sha1(value.encode("utf-8")).hexdigest()[:12]
     return f"item-{digest}"
+
+
+def uploaded_cover_filename(filename: str | None, media_type: str) -> str:
+    normalized = Path(filename or "").name.strip()
+    if normalized:
+        suffix = Path(normalized).suffix
+        if suffix:
+            return normalized
+    extension = mimetypes.guess_extension(media_type) or ".bin"
+    return f"cover{extension}"
 
 
 def extract_named_items(raw_items: Any) -> list[NamedTagSummary]:
@@ -1285,6 +1296,68 @@ async def update_tracked_book_branch(
     updated = await get_tracked_book_detail(session, book_id)
     assert updated is not None
     return TrackedBookSummary.model_validate(updated.model_dump()), job
+
+
+async def update_tracked_book_cover(
+    session: AsyncSession,
+    *,
+    book_id: str,
+    filename: str,
+    content: bytes,
+    media_type: str,
+) -> TrackedBookDetail:
+    detail = await get_tracked_book_detail(session, book_id)
+    if detail is None:
+        raise TrackingError("Tracked book not found")
+
+    if not content:
+        raise TrackingError("Cover file is empty")
+    if not media_type.startswith("image/"):
+        raise TrackingError("Unsupported cover file type")
+
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise TrackingError("Tracked book not found")
+
+    asset_name = uploaded_cover_filename(filename, media_type)
+    content_hash = sha256(content).hexdigest()
+    relative_path = write_binary_asset(asset_name, content_hash, content)
+    cover_url = f"manual-upload://cover/{book_id}"
+    now = utcnow()
+
+    cached_cover = (
+        await session.exec(
+            select(BinaryAssetCache).where(BinaryAssetCache.source_url == cover_url)
+        )
+    ).one_or_none()
+    if cached_cover is None:
+        session.add(
+            BinaryAssetCache(
+                source_url=cover_url,
+                media_type=media_type,
+                original_name=asset_name,
+                relative_path=relative_path,
+                content_hash=content_hash,
+                fetched_at=now,
+                updated_at=now,
+            )
+        )
+    else:
+        cached_cover.media_type = media_type
+        cached_cover.original_name = asset_name
+        cached_cover.relative_path = relative_path
+        cached_cover.content_hash = content_hash
+        cached_cover.updated_at = now
+        session.add(cached_cover)
+
+    book.cover_url = cover_url
+    book.updated_at = now
+    session.add(book)
+    await session.commit()
+
+    updated = await get_tracked_book_detail(session, book_id)
+    assert updated is not None
+    return updated
 
 
 async def update_book_preferences(

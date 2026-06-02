@@ -896,6 +896,51 @@ async def test_upload_epubs_extracts_cover_from_cover_page_fallback(client, db) 
     assert cover_response.headers["content-type"].startswith("image/jpeg")
 
 
+async def test_upload_tracked_book_cover_replaces_existing_cover(client, db) -> None:
+    response = await client.post(
+        "/api/v1/tracking/uploads/epub",
+        files=[
+            (
+                "files",
+                (
+                    "volume-cover.epub",
+                    build_test_epub_bytes("Uploaded Cover Volume", "Uploader Cover", cover_bytes=b"old-cover"),
+                    "application/epub+zip",
+                ),
+            )
+        ],
+    )
+    assert response.status_code == 201
+    payload = response.json()[0]
+
+    update = await client.post(
+        f"/api/v1/tracking/books/{payload['book_id']}/cover",
+        files=[("file", ("updated-cover.png", b"new-cover", "image/png"))],
+    )
+    assert update.status_code == 200
+    assert update.json()["cover_url"] == f"manual-upload://cover/{payload['book_id']}"
+
+    book = await db.get(Book, payload["book_id"])
+    assert book is not None
+    assert book.cover_url == f"manual-upload://cover/{payload['book_id']}"
+
+    cached_cover = (
+        await db.exec(
+            select(BinaryAssetCache).where(
+                BinaryAssetCache.source_url == f"manual-upload://cover/{payload['book_id']}"
+            )
+        )
+    ).one_or_none()
+    assert cached_cover is not None
+    assert cached_cover.media_type == "image/png"
+    assert cached_cover.original_name == "updated-cover.png"
+
+    cover_response = await client.get(f"/opds/books/{payload['book_id']}/cover")
+    assert cover_response.status_code == 200
+    assert cover_response.content == b"new-cover"
+    assert cover_response.headers["content-type"].startswith("image/png")
+
+
 async def test_create_tracked_book_primes_cover_before_epub_build(client, db, monkeypatch) -> None:
     class FakeRanobeLibClient:
         @staticmethod

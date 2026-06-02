@@ -40,6 +40,7 @@
     putOpdsVisibility,
     triggerCheck,
     uploadEpubBooks,
+    uploadTrackedBookCover,
     updateBookPreferences,
     updateKOReaderDocument,
     updateTrackedBookBranch,
@@ -104,6 +105,7 @@
   let validating = $state(false);
   let previewing = $state(false);
   let uploadingEpubs = $state(false);
+  let uploadingCover = $state(false);
   let actionBookId = $state<string | null>(null);
   let savingPreferences = $state(false);
   let savingCollection = $state(false);
@@ -124,6 +126,7 @@
   let preview = $state<PreviewBook | null>(null);
   let uploadedEpubFiles = $state<File[]>([]);
   let epubUploadInput = $state<HTMLInputElement | null>(null);
+  let coverUploadInput = $state<HTMLInputElement | null>(null);
   let collectionName = $state("");
 
   let drawerOpen = $state(false);
@@ -471,6 +474,23 @@
       );
     } finally {
       uploadingEpubs = false;
+    }
+  }
+
+  async function submitBookCover(fileList: FileList | null) {
+    if (!drawerBook || !fileList?.[0]) return;
+    uploadingCover = true;
+    try {
+      await uploadTrackedBookCover(drawerBook.book_id, fileList[0]);
+      if (coverUploadInput) coverUploadInput.value = "";
+      toast.success("updated cover");
+      await loadDashboard();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "failed to update cover",
+      );
+    } finally {
+      uploadingCover = false;
     }
   }
 
@@ -1872,6 +1892,47 @@
                     type="text"
                     bind:value={preferenceAuthor}
                   />
+                </div>
+
+                <div class="drawer-section">
+                  <div class="drawer-section-label">cover</div>
+                  <div class="preview-card">
+                    <div class="preview-cover-shell">
+                      {#if coverUrl(drawerBook)}
+                        <img
+                          class="preview-cover"
+                          src={coverUrl(drawerBook) ?? undefined}
+                          alt={`Cover for ${drawerBook.title}`}
+                        />
+                      {:else}
+                        <div class="preview-cover preview-cover--empty">
+                          <span>{drawerBook.title.slice(0, 1)}</span>
+                        </div>
+                      {/if}
+                    </div>
+                    <div class="preview-copy preview-copy--cover-actions">
+                      <div class="preview-meta">jpg, png, webp, gif</div>
+                      <input
+                        id="book-cover-upload"
+                        bind:this={coverUploadInput}
+                        class="sr-only-upload"
+                        type="file"
+                        accept="image/*"
+                        onchange={(event) =>
+                          void submitBookCover(
+                            (event.currentTarget as HTMLInputElement).files,
+                          )}
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-outline"
+                        disabled={uploadingCover}
+                        onclick={() => coverUploadInput?.click()}
+                      >
+                        {uploadingCover ? "uploading..." : "update cover"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="form-field">
