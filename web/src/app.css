@@ -370,7 +370,8 @@ h4 {
   transform: translateY(-50%);
   color: var(--text-ghost);
   pointer-events: none;
-  font-size: 12px;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .search-input {
