@@ -80,11 +80,13 @@ If app-wide Basic auth is enabled, the normal web UI and `/api/*` routes still u
 
 Important environment variables:
 
-- `RANOBARR_AUTH_ENABLED`
-- `RANOBARR_AUTH_USERNAME`
-- `RANOBARR_AUTH_PASSWORD`
-- `RANOBARR_SCAN_INTERVAL_SECONDS`
-- `RANOBARR_PORT`
+- `RANOBARR__AUTH__ENABLED`
+- `RANOBARR__AUTH__USERNAME`
+- `RANOBARR__AUTH__PASSWORD`
+- `RANOBARR__SCHEDULER__SCAN_INTERVAL_SECONDS`
+- `RANOBARR__SERVER__PORT`
+
+If you use `docker compose`, the compose file maps shell variables like `RANOBARR_AUTH_ENABLED` into the nested app variables above.
 
 ## Development
 
