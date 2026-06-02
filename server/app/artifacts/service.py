@@ -54,8 +54,16 @@ def artifact_download_filename(book: Book, artifact: Artifact) -> str:
     return f"{stem}{suffix}"
 
 
+def _ascii_download_fallback(filename: str) -> str:
+    normalized = unicodedata.normalize("NFKD", filename)
+    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+    sanitized = _INVALID_FILENAME_CHARS.sub(" ", ascii_value)
+    sanitized = _WHITESPACE.sub(" ", sanitized).strip(" .")
+    return sanitized or "download"
+
+
 def build_download_headers(filename: str) -> dict[str, str]:
-    escaped_filename = filename.replace("\\", "\\\\").replace('"', '\\"')
+    escaped_filename = _ascii_download_fallback(filename).replace("\\", "\\\\").replace('"', '\\"')
     encoded_filename = quote(filename, safe="")
     return {
         "content-disposition": (

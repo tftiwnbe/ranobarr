@@ -128,7 +128,7 @@ async def test_opds_book_detail_and_epub_acquisition(client, db, temp_data_dir) 
         db,
         temp_data_dir,
         slug="detail-book",
-        title="Detail: Book",
+        title="Detail: Villain’s Book",
         chapter_count=7,
     )
 
@@ -137,7 +137,7 @@ async def test_opds_book_detail_and_epub_acquisition(client, db, temp_data_dir) 
     root = ET.fromstring(response.content)
     entry = root.find("atom:entry", ATOM_NS)
     assert entry is not None
-    assert entry.findtext("atom:title", namespaces=ATOM_NS) == "Detail: Book"
+    assert entry.findtext("atom:title", namespaces=ATOM_NS) == "Detail: Villain’s Book"
     acquisition_links = [
         link.attrib["href"]
         for link in entry.findall("atom:link", ATOM_NS)
@@ -148,20 +148,20 @@ async def test_opds_book_detail_and_epub_acquisition(client, db, temp_data_dir) 
     response = await client.get(f"/opds/books/{book.id}/acquire/epub")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/epub+zip")
-    assert 'filename="Author - Detail: Book.epub"' in response.headers[
+    assert 'filename="Author - Detail: Villains Book.epub"' in response.headers[
         "content-disposition"
     ]
-    assert "filename*=utf-8''Author%20-%20Detail%3A%20Book.epub" in response.headers[
+    assert "filename*=utf-8''Author%20-%20Detail%3A%20Villain%E2%80%99s%20Book.epub" in response.headers[
         "content-disposition"
     ]
-    assert response.content == b"Detail: Book-epub"
+    assert response.content == "Detail: Villain’s Book-epub".encode("utf-8")
 
     response = await client.get(f"/api/v1/artifacts/{artifact.id}/download")
     assert response.status_code == 200
-    assert 'filename="Author - Detail: Book.epub"' in response.headers[
+    assert 'filename="Author - Detail: Villains Book.epub"' in response.headers[
         "content-disposition"
     ]
-    assert "filename*=utf-8''Author%20-%20Detail%3A%20Book.epub" in response.headers[
+    assert "filename*=utf-8''Author%20-%20Detail%3A%20Villain%E2%80%99s%20Book.epub" in response.headers[
         "content-disposition"
     ]
 
