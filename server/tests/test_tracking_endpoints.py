@@ -122,6 +122,32 @@ async def test_jobs_endpoint_includes_title_and_trigger(client, db) -> None:
     assert payload[0]["trigger"] == "manual"
 
 
+async def test_tracked_books_expose_chapter_added_timestamp_as_utc(client, db) -> None:
+    book = Book(
+        slug="chapter-added-book",
+        source_url="https://ranobelib.me/ru/book/chapter-added-book",
+        title="Chapter Added Book",
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    db.add(TrackRule(book_id=book.id))
+    state = BookState(
+        book_id=book.id,
+        last_remote_chapter_key="v1_ch9",
+    )
+    state.last_chapter_added_at = state.created_at.replace(hour=5, minute=0, second=0, microsecond=0, tzinfo=None)
+    db.add(state)
+    await db.commit()
+
+    response = await client.get("/api/v1/tracking/books?sort=updated")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["last_chapter_added_at"].endswith("Z")
+    assert payload[0]["last_chapter_added_at"].startswith(str(state.last_chapter_added_at.date()))
+
+
 async def test_artifacts_endpoint_empty(client) -> None:
     response = await client.get("/api/v1/artifacts")
     assert response.status_code == 200

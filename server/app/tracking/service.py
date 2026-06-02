@@ -58,6 +58,14 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 async def prime_cover_asset(session: AsyncSession, cover_url: str | None) -> None:
     if not cover_url:
         return
@@ -80,6 +88,7 @@ class ResolvedBookPayload:
     branches: list[BranchSummary]
     selected_branch_label: str | None
     last_remote_chapter_key: str | None
+    last_chapter_added_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -91,10 +100,20 @@ class SelectedChapter:
     branch_id: str | None
     branch_name: str | None
     ordinal_index: int
+    created_at: datetime | None
 
 
 def chapter_key(volume: Any, number: Any) -> str:
     return f"v{volume or '1'}_ch{number or '0'}"
+
+
+def parse_remote_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
 
 
 def branch_id_of(branch: Any) -> str | None:
@@ -378,10 +397,11 @@ def build_tracked_book_summary(
         rating=book.rating,
         comment=book.comment,
         collections=collections,
-        created_at=book.created_at,
-        updated_at=book.updated_at,
-        last_checked_at=state.last_checked_at,
-        last_downloaded_at=state.last_downloaded_at,
+        created_at=as_utc(book.created_at),
+        updated_at=as_utc(book.updated_at),
+        last_chapter_added_at=as_utc(state.last_chapter_added_at),
+        last_checked_at=as_utc(state.last_checked_at),
+        last_downloaded_at=as_utc(state.last_downloaded_at),
         last_remote_chapter_key=state.last_remote_chapter_key,
     )
 
@@ -403,6 +423,7 @@ def select_chapters_for_rule(
                 branch_id=branch_id_of(item["branch"]),
                 branch_name=branch_name_of(item["branch"]),
                 ordinal_index=int(item["chapter"].get("index", 0)),
+                created_at=parse_remote_datetime(item["branch"].get("created_at")),
             )
             for item in selected_rows
         ]
@@ -427,6 +448,7 @@ def select_chapters_for_rule(
                 branch_id=branch_id_of(matched_branch),
                 branch_name=branch_name_of(matched_branch),
                 ordinal_index=int(chapter.get("index", 0)),
+                created_at=parse_remote_datetime(matched_branch.get("created_at")) if isinstance(matched_branch, dict) else None,
             )
         )
 
@@ -487,6 +509,10 @@ async def resolve_remote_book(
         )
         if selected_rows:
             latest_key = selected_rows[-1].chapter_key
+    latest_created_at = max(
+        (chapter.created_at for chapter in selected_rows if chapter.created_at is not None),
+        default=None,
+    ) if chapters_data else None
 
     return ResolvedBookPayload(
         slug=slug,
@@ -500,6 +526,7 @@ async def resolve_remote_book(
         branches=branch_list,
         selected_branch_label=selected_branch_label,
         last_remote_chapter_key=latest_key,
+        last_chapter_added_at=latest_created_at,
     )
 
 
@@ -582,6 +609,7 @@ async def track_book(
     if state is None:
         state = BookState(book_id=book.id)
     state.last_remote_chapter_key = resolved.last_remote_chapter_key
+    state.last_chapter_added_at = resolved.last_chapter_added_at
     session.add(state)
     await session.commit()
     await prime_cover_asset(session, resolved.cover_url)
@@ -633,7 +661,10 @@ async def list_tracked_books(
         query = query.order_by(Book.title.asc(), Book.id.asc())
     elif sort == "updated":
         query = query.order_by(
-            func.coalesce(BookState.last_built_at, BookState.last_checked_at, Book.updated_at, Book.created_at).desc(),
+            func.coalesce(
+                BookState.last_chapter_added_at,
+                Book.created_at,
+            ).desc(),
             Book.title.asc(),
         )
     else:
@@ -710,6 +741,7 @@ async def get_tracked_book_detail(session: AsyncSession, book_id: str) -> Tracke
         collections=summary.collections,
         created_at=summary.created_at,
         updated_at=summary.updated_at,
+        last_chapter_added_at=summary.last_chapter_added_at,
         last_checked_at=summary.last_checked_at,
         last_remote_chapter_key=summary.last_remote_chapter_key,
         snapshots=[
@@ -845,6 +877,10 @@ async def process_check_updates_job(
     book.branches_json = serialize_branches(branch_list)
     book.updated_at = now
     state.last_remote_chapter_key = latest_remote_key
+    state.last_chapter_added_at = max(
+        (chapter.created_at for chapter in selected_chapters if chapter.created_at is not None),
+        default=state.last_chapter_added_at,
+    )
     state.last_checked_at = now
     state.updated_at = now
     state.last_error = None

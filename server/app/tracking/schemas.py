@@ -101,6 +101,7 @@ class TrackedBookSummary(BaseModel):
     collections: list[CollectionSummary] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    last_chapter_added_at: datetime | None
     last_checked_at: datetime | None
     last_downloaded_at: datetime | None = None
     last_remote_chapter_key: str | None

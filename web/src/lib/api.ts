@@ -105,6 +105,7 @@ export type TrackedBook = {
   collections: CollectionSummary[];
   created_at: string;
   updated_at: string;
+  last_chapter_added_at: string | null;
   last_checked_at: string | null;
   last_downloaded_at: string | null;
   last_remote_chapter_key: string | null;

@@ -228,7 +228,7 @@
         title: book.title,
         author: book.author,
         created_at: book.created_at,
-        updated_at: book.updated_at,
+        updated_at: book.last_chapter_added_at ?? book.created_at,
         book,
       })),
       ...manualKOReaderDocuments.map((document) => ({
@@ -624,10 +624,8 @@
     if (diffMin < 60) return `${diffMin}m ago`;
     const diffHours = Math.floor(diffMin / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
   }
 
   function formatBytes(value: number): string {
@@ -1129,7 +1127,7 @@
                     {/if}
                     <span class="book-dot">·</span>
                     <span class="book-timestamp"
-                      >updated {formatDate(entry.book.updated_at)}</span
+                      >updated {formatDate(entry.book.last_chapter_added_at ?? entry.book.created_at)}</span
                     >
                   </div>
                 </div>

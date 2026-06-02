@@ -50,6 +50,7 @@ class BookState(SQLModel, table=True):
     book_id: str = Field(foreign_key="book.id", unique=True, index=True)
     last_remote_chapter_key: str | None = None
     last_built_chapter_key: str | None = None
+    last_chapter_added_at: Optional[datetime] = None
     last_checked_at: Optional[datetime] = None
     last_built_at: Optional[datetime] = None
     last_downloaded_at: Optional[datetime] = None

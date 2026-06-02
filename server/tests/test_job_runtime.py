@@ -25,14 +25,14 @@ class FakeRanobeLibClient:
                 "number": "1",
                 "name": "One",
                 "index": 1,
-                "branches": [{"branch_id": 7, "teams": [{"name": "Branch 7"}]}],
+                "branches": [{"branch_id": 7, "created_at": "2024-01-02T03:04:05.000000Z", "teams": [{"name": "Branch 7"}]}],
             },
             {
                 "volume": "1",
                 "number": "2",
                 "name": "Two",
                 "index": 2,
-                "branches": [{"branch_id": 7, "teams": [{"name": "Branch 7"}]}],
+                "branches": [{"branch_id": 7, "created_at": "2024-02-03T04:05:06.000000Z", "teams": [{"name": "Branch 7"}]}],
             },
         ]
 
@@ -225,6 +225,10 @@ async def test_check_updates_job_enqueues_build_when_artifact_is_stale(db, monke
     ).all()
     assert len(follow_up_jobs) == 1
     assert follow_up_jobs[0].status == "queued"
+
+    state = (await db.exec(select(BookState).where(BookState.book_id == book.id))).one()
+    assert state.last_chapter_added_at is not None
+    assert state.last_chapter_added_at.date().isoformat() == "2024-02-03"
 
 
 async def test_runtime_enqueues_missing_epub_builds_for_existing_books(db) -> None:
