@@ -1,5 +1,7 @@
 import hashlib
+import tempfile
 
+from ebooklib import epub
 from sqlmodel import select
 
 from app.core.titles import normalize_book_title
@@ -89,6 +91,69 @@ def test_normalize_book_title_strips_novella_suffix() -> None:
 def test_resolve_author_label_falls_back_to_publisher() -> None:
     assert resolve_author_label({"authors": [{"name": "Author"}], "publisher": {"name": "Publisher"}}) == "Author"
     assert resolve_author_label({"publisher": {"name": "Publisher"}}) == "Publisher"
+
+
+def build_test_epub_bytes(title: str, author: str, *, cover_bytes: bytes | None = None) -> bytes:
+    book = epub.EpubBook()
+    book.set_identifier(f"test-{title}")
+    book.set_title(title)
+    book.add_author(author)
+    if cover_bytes is not None:
+        book.set_cover("cover.jpg", cover_bytes, create_page=False)
+    chapter = epub.EpubHtml(title="Chapter 1", file_name="chapter-1.xhtml")
+    chapter.set_content(f"<h1>{title}</h1><p>Test chapter</p>")
+    book.add_item(chapter)
+    book.toc = [chapter]
+    book.spine = ["nav", chapter]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    with tempfile.NamedTemporaryFile(suffix=".epub") as temp_file:
+        epub.write_epub(temp_file.name, book, {})
+        temp_file.seek(0)
+        return temp_file.read()
+
+
+def build_test_epub_bytes_with_cover_page(title: str, author: str, *, cover_bytes: bytes) -> bytes:
+    book = epub.EpubBook()
+    book.set_identifier(f"test-cover-page-{title}")
+    book.set_title(title)
+    book.add_author(author)
+
+    cover_image = epub.EpubItem(
+        uid="x01.jpg",
+        file_name="Images/01.jpg",
+        media_type="image/jpeg",
+        content=cover_bytes,
+    )
+    cover_page = epub.EpubHtml(title="Cover", file_name="Text/cover.xhtml")
+    cover_page.set_content(
+        """
+        <html xmlns="http://www.w3.org/1999/xhtml">
+          <body>
+            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+              <image xlink:href="../Images/01.jpg" />
+            </svg>
+          </body>
+        </html>
+        """
+    )
+    chapter = epub.EpubHtml(title="Chapter 1", file_name="Text/chapter-1.xhtml")
+    chapter.set_content(f"<h1>{title}</h1><p>Test chapter</p>")
+
+    book.add_item(cover_image)
+    book.add_item(cover_page)
+    book.add_item(chapter)
+    book.add_metadata("OPF", "meta", "", {"name": "cover", "content": "x01.jpg"})
+    book.toc = [chapter]
+    book.spine = [cover_page, "nav", chapter]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    with tempfile.NamedTemporaryFile(suffix=".epub") as temp_file:
+        epub.write_epub(temp_file.name, book, {})
+        temp_file.seek(0)
+        return temp_file.read()
 
 
 async def test_healthcheck(client) -> None:
@@ -671,6 +736,164 @@ async def test_preview_endpoint_returns_branches_and_metadata(client, monkeypatc
     assert payload["branches"][0]["id"] == "5"
     assert payload["genres"][0]["name"] == "Fantasy"
     assert payload["tags"][0]["name"] == "Academy"
+
+
+async def test_upload_epubs_imports_multiple_local_titles(client, db, temp_data_dir) -> None:
+    response = await client.post(
+        "/api/v1/tracking/uploads/epub",
+        files=[
+            ("files", ("volume-1.epub", build_test_epub_bytes("Uploaded Volume 1", "Uploader One"), "application/epub+zip")),
+            ("files", ("volume-2.epub", build_test_epub_bytes("Uploaded Volume 2", "Uploader Two"), "application/epub+zip")),
+        ],
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert len(payload) == 2
+    assert payload[0]["title"] == "Uploaded Volume 1"
+    assert payload[0]["author"] == "Uploader One"
+    assert payload[0]["enabled"] is False
+    assert payload[1]["title"] == "Uploaded Volume 2"
+
+    books = (await db.exec(select(Book).where(Book.slug.like("manual-%")).order_by(Book.created_at.asc()))).all()
+    assert len(books) == 2
+
+    for book in books:
+        artifacts = (await db.exec(select(Artifact).where(Artifact.book_id == book.id, Artifact.format == "epub"))).all()
+        assert len(artifacts) == 1
+        assert (temp_data_dir / artifacts[0].relative_path).is_file()
+
+
+async def test_upload_epubs_reuses_existing_manual_title_for_same_file(client, db) -> None:
+    file_bytes = build_test_epub_bytes("Uploaded Volume 1", "Uploader One")
+
+    first = await client.post(
+        "/api/v1/tracking/uploads/epub",
+        files=[("files", ("volume-1.epub", file_bytes, "application/epub+zip"))],
+    )
+    assert first.status_code == 201
+    first_payload = first.json()
+
+    second = await client.post(
+        "/api/v1/tracking/uploads/epub",
+        files=[("files", ("volume-1-copy.epub", file_bytes, "application/epub+zip"))],
+    )
+    assert second.status_code == 201
+    second_payload = second.json()
+    assert second_payload[0]["book_id"] == first_payload[0]["book_id"]
+
+    books = (await db.exec(select(Book).where(Book.source_url.like("manual-upload://epub/%")))).all()
+    assert len(books) == 1
+
+
+async def test_upload_epubs_reupload_backfills_missing_cover(client, db) -> None:
+    file_bytes = build_test_epub_bytes_with_cover_page(
+        "Uploaded Volume 1",
+        "Uploader One",
+        cover_bytes=b"cover-backfill",
+    )
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    book = Book(
+        slug="manual-uploaded-volume-1",
+        source_url=f"manual-upload://epub/{file_hash}",
+        title="Uploaded Volume 1",
+        author="Uploader One",
+        available_chapters=1,
+        cover_url=None,
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+    db.add(TrackRule(book_id=book.id, enabled=False, branch_mode="default"))
+    db.add(BookState(book_id=book.id))
+    await db.commit()
+
+    second = await client.post(
+        "/api/v1/tracking/uploads/epub",
+        files=[
+            (
+                "files",
+                (
+                    "volume-no-cover.epub",
+                    file_bytes,
+                    "application/epub+zip",
+                ),
+            )
+        ],
+    )
+    assert second.status_code == 201
+
+    book = await db.get(Book, book.id)
+    assert book is not None
+    assert book.cover_url is not None
+
+
+async def test_upload_epubs_extracts_cover_for_local_title(client, db) -> None:
+    cover_bytes = b"fake-jpeg-cover"
+
+    response = await client.post(
+        "/api/v1/tracking/uploads/epub",
+        files=[
+            (
+                "files",
+                (
+                    "volume-cover.epub",
+                    build_test_epub_bytes("Uploaded Cover Volume", "Uploader Cover", cover_bytes=cover_bytes),
+                    "application/epub+zip",
+                ),
+            )
+        ],
+    )
+    assert response.status_code == 201
+    payload = response.json()[0]
+    assert payload["cover_url"] is not None
+
+    book = await db.get(Book, payload["book_id"])
+    assert book is not None
+    assert book.cover_url is not None
+
+    cached_cover = (
+        await db.exec(select(BinaryAssetCache).where(BinaryAssetCache.source_url == book.cover_url))
+    ).one_or_none()
+    assert cached_cover is not None
+
+    cover_response = await client.get(f"/opds/books/{book.id}/cover")
+    assert cover_response.status_code == 200
+    assert cover_response.content == cover_bytes
+    assert cover_response.headers["content-type"].startswith("image/jpeg")
+
+
+async def test_upload_epubs_extracts_cover_from_cover_page_fallback(client, db) -> None:
+    cover_bytes = b"fallback-jpeg-cover"
+
+    response = await client.post(
+        "/api/v1/tracking/uploads/epub",
+        files=[
+            (
+                "files",
+                (
+                    "volume-cover-page.epub",
+                    build_test_epub_bytes_with_cover_page(
+                        "Uploaded Cover Page Volume",
+                        "Uploader Cover",
+                        cover_bytes=cover_bytes,
+                    ),
+                    "application/epub+zip",
+                ),
+            )
+        ],
+    )
+    assert response.status_code == 201
+    payload = response.json()[0]
+    assert payload["cover_url"] is not None
+
+    book = await db.get(Book, payload["book_id"])
+    assert book is not None
+    assert book.cover_url is not None
+
+    cover_response = await client.get(f"/opds/books/{book.id}/cover")
+    assert cover_response.status_code == 200
+    assert cover_response.content == cover_bytes
+    assert cover_response.headers["content-type"].startswith("image/jpeg")
 
 
 async def test_create_tracked_book_primes_cover_before_epub_build(client, db, monkeypatch) -> None:

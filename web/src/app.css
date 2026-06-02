@@ -927,6 +927,103 @@ h4 {
   font-size: 11px;
 }
 
+.drawer-divider {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  padding-top: 0.2rem;
+}
+
+.drawer-file-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.drawer-file-item {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  background: var(--void-2);
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.sr-only-upload {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.upload-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 42px;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--line);
+  background: var(--void-2);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.upload-picker-copy {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.upload-picker-count {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.upload-picker-hint {
+  font-size: 11px;
+  color: var(--text-ghost);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-picker-action {
+  flex: 0 0 auto;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+}
+
+.upload-picker:hover {
+  border-color: var(--void-6);
+  background: rgba(20, 20, 28, 0.92);
+}
+
+.upload-picker:focus-visible {
+  outline: none;
+  border-color: var(--void-6);
+}
+
+.upload-picker:hover .upload-picker-action,
+.upload-picker:focus-visible .upload-picker-action {
+  color: var(--text);
+}
+
 .toggle-row {
   display: flex;
   align-items: center;

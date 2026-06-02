@@ -39,6 +39,7 @@
     putCredential,
     putOpdsVisibility,
     triggerCheck,
+    uploadEpubBooks,
     updateBookPreferences,
     updateKOReaderDocument,
     updateTrackedBookBranch,
@@ -102,6 +103,7 @@
   let submitting = $state(false);
   let validating = $state(false);
   let previewing = $state(false);
+  let uploadingEpubs = $state(false);
   let actionBookId = $state<string | null>(null);
   let savingPreferences = $state(false);
   let savingCollection = $state(false);
@@ -120,6 +122,8 @@
   let bookUrl = $state("");
   let selectedBranchId = $state("");
   let preview = $state<PreviewBook | null>(null);
+  let uploadedEpubFiles = $state<File[]>([]);
+  let epubUploadInput = $state<HTMLInputElement | null>(null);
   let collectionName = $state("");
 
   let drawerOpen = $state(false);
@@ -384,6 +388,10 @@
     selectedBranchId = "";
   }
 
+  function setUploadedEpubFiles(fileList: FileList | null) {
+    uploadedEpubFiles = fileList ? Array.from(fileList) : [];
+  }
+
   async function inspectBookUrl() {
     if (!bookUrl.trim()) return;
     previewing = true;
@@ -423,6 +431,29 @@
       );
     } finally {
       submitting = false;
+    }
+  }
+
+  async function submitUploadedEpubs() {
+    if (uploadedEpubFiles.length === 0) return;
+    uploadingEpubs = true;
+    try {
+      const imported = await uploadEpubBooks(uploadedEpubFiles);
+      uploadedEpubFiles = [];
+      if (epubUploadInput) epubUploadInput.value = "";
+      closeDrawer();
+      toast.success(
+        imported.length === 1
+          ? `imported ${imported[0].title}`
+          : `imported ${imported.length} epub titles`,
+      );
+      await loadDashboard();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "failed to import epubs",
+      );
+    } finally {
+      uploadingEpubs = false;
     }
   }
 
@@ -1097,7 +1128,9 @@
                       <StarRating value={entry.book.rating} size={11} />
                     {/if}
                     <span class="book-chip"
-                      >{entry.book.known_remote_chapters} ch</span
+                      >{entry.book.enabled
+                        ? entry.book.known_remote_chapters
+                        : entry.book.available_chapters} ch</span
                     >
                     {#if entry.book.last_remote_chapter_key}
                       <span class="book-chip"
@@ -1309,6 +1342,75 @@
                 onclick={() => void submitBook()}
               >
                 {submitting ? "queueing..." : "track and build"}
+              </button>
+
+              <div class="drawer-divider">or import local epubs</div>
+
+              <div class="form-field">
+                <label for="epub-upload" class="form-label">epub files</label>
+                <input
+                  id="epub-upload"
+                  bind:this={epubUploadInput}
+                  class="sr-only-upload"
+                  type="file"
+                  accept=".epub,application/epub+zip"
+                  multiple
+                  onchange={(event) =>
+                    setUploadedEpubFiles(
+                      (event.currentTarget as HTMLInputElement).files,
+                    )}
+                />
+                <button
+                  type="button"
+                  class="upload-picker"
+                  onclick={() => epubUploadInput?.click()}
+                >
+                  <div class="upload-picker-copy">
+                    {#if uploadedEpubFiles.length > 0}
+                      <span class="upload-picker-count">
+                        {uploadedEpubFiles.length} file{uploadedEpubFiles.length !== 1
+                          ? "s"
+                          : ""}
+                      </span>
+                      <span class="upload-picker-hint">
+                        {uploadedEpubFiles[0].name}
+                        {#if uploadedEpubFiles.length > 1}
+                          + {uploadedEpubFiles.length - 1} more
+                        {/if}
+                      </span>
+                    {:else}
+                      <span class="upload-picker-count">no files selected</span>
+                      <span class="upload-picker-hint">
+                        select one or more local epubs
+                      </span>
+                    {/if}
+                  </div>
+                  <span class="upload-picker-action">
+                    {uploadedEpubFiles.length > 0 ? "change files" : "choose files"}
+                  </span>
+                </button>
+              </div>
+
+              {#if uploadedEpubFiles.length > 0}
+                <div class="drawer-section">
+                  <div class="drawer-section-label">
+                    {uploadedEpubFiles.length} selected
+                  </div>
+                  <div class="drawer-file-list">
+                    {#each uploadedEpubFiles as file}
+                      <div class="drawer-file-item">{file.name}</div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <button
+                type="button"
+                class="btn btn-outline full-width-btn"
+                disabled={uploadingEpubs || uploadedEpubFiles.length === 0}
+                onclick={() => void submitUploadedEpubs()}
+              >
+                {uploadingEpubs ? "importing..." : "import epubs"}
               </button>
             </div>
           {:else if drawerTab === "auth"}
@@ -1820,14 +1922,16 @@
                 >
                   save
                 </button>
-                <button
-                  type="button"
-                  class="btn btn-outline"
-                  disabled={actionBookId === drawerBook.book_id}
-                  onclick={() => void runBookAction(drawerBook.book_id)}
-                >
-                  check now
-                </button>
+                {#if drawerBook.enabled}
+                  <button
+                    type="button"
+                    class="btn btn-outline"
+                    disabled={actionBookId === drawerBook.book_id}
+                    onclick={() => void runBookAction(drawerBook.book_id)}
+                  >
+                    check now
+                  </button>
+                {/if}
                 {#if artifactUrl(drawerBook)}
                   <a href={artifactUrl(drawerBook)} class="btn btn-ghost"
                     >download epub</a

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.database import get_database_session
@@ -24,6 +24,7 @@ from .service import (
     list_tracked_books,
     preview_remote_book,
     track_book,
+    import_uploaded_epubs,
     update_book_preferences,
     update_tracked_book_branch,
 )
@@ -53,6 +54,26 @@ async def create_tracked_book(
 ) -> TrackBookResponse:
     try:
         return await track_book(session, client, request)
+    except TrackingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/uploads/epub", response_model=list[TrackedBookSummary], status_code=status.HTTP_201_CREATED)
+async def upload_epub_books(
+    files: list[UploadFile] = File(...),
+    session: AsyncSession = Depends(get_database_session),
+) -> list[TrackedBookSummary]:
+    if not files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No EPUB files uploaded")
+
+    try:
+        payloads: list[tuple[str, bytes]] = []
+        for file in files:
+            filename = file.filename or "upload.epub"
+            if not filename.lower().endswith(".epub"):
+                raise TrackingError(f"Unsupported file type: {filename}")
+            payloads.append((filename, await file.read()))
+        return await import_uploaded_epubs(session, payloads)
     except TrackingError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

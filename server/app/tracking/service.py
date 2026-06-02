@@ -1,23 +1,27 @@
 import json
 import logging
 import re
-from hashlib import sha1
+import tempfile
+from hashlib import sha1, sha256
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
+from ebooklib import ITEM_COVER, ITEM_DOCUMENT, epub
+from bs4 import BeautifulSoup
 from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.builds.assets import ensure_binary_assets_cached
-from app.builds.storage import artifact_file_path, cache_file_path
+from app.builds.storage import artifact_file_path, cache_file_path, write_binary_asset, write_epub_artifact
 from app.core.errors import TrackingError
 from app.core.jobs import enqueue_job
 from app.core.titles import normalize_book_title
 from app.models import (
     Artifact,
+    BinaryAssetCache,
     Book,
     BookState,
     CollectionBook,
@@ -103,6 +107,80 @@ class SelectedChapter:
     created_at: datetime | None
 
 
+@dataclass(slots=True)
+class UploadedEpubPayload:
+    title: str
+    author: str | None
+    chapter_count: int
+    content_hash: str
+    cover_filename: str | None
+    cover_media_type: str | None
+    cover_content: bytes | None
+
+
+def resolve_epub_cover(book: epub.EpubBook) -> tuple[str, str, bytes] | None:
+    direct_cover = next(iter(book.get_items_of_type(ITEM_COVER)), None)
+    if direct_cover is not None:
+        return (
+            direct_cover.get_name(),
+            direct_cover.media_type,
+            direct_cover.get_content(),
+        )
+
+    items = list(book.get_items())
+    items_by_id = {
+        str(getattr(item, "id", "")).strip(): item
+        for item in items
+        if str(getattr(item, "id", "")).strip()
+    }
+    items_by_name = {
+        PurePosixPath(item.get_name()).as_posix().lstrip("./"): item
+        for item in items
+    }
+
+    opf_metadata = book.metadata.get("http://www.idpf.org/2007/opf", {})
+    for _value, attributes in opf_metadata.get("meta", []):
+        if attributes.get("name") != "cover":
+            continue
+        cover_id = str(attributes.get("content") or "").strip()
+        item = items_by_id.get(cover_id)
+        if item is not None:
+            return (item.get_name(), item.media_type, item.get_content())
+
+    cover_doc = next(
+        (
+            item
+            for item in items
+            if item.get_type() == ITEM_DOCUMENT
+            and "cover" in PurePosixPath(item.get_name()).name.lower()
+        ),
+        None,
+    )
+    if cover_doc is None:
+        return None
+
+    base_dir = PurePosixPath(cover_doc.get_name()).parent
+    soup = BeautifulSoup(cover_doc.get_content(), "xml")
+
+    candidate_paths: list[str] = []
+    for image in soup.find_all("image"):
+        href = image.get("xlink:href") or image.get("href")
+        if href:
+            candidate_paths.append(href)
+    for image in soup.find_all("img"):
+        src = image.get("src")
+        if src:
+            candidate_paths.append(src)
+
+    for candidate_path in candidate_paths:
+        normalized = PurePosixPath(base_dir.joinpath(candidate_path)).as_posix().lstrip("./")
+        item = items_by_name.get(normalized)
+        if item is not None:
+            return (item.get_name(), item.media_type, item.get_content())
+
+    return None
+
+
 def chapter_key(volume: Any, number: Any) -> str:
     return f"v{volume or '1'}_ch{number or '0'}"
 
@@ -114,6 +192,66 @@ def parse_remote_datetime(value: Any) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
     except ValueError:
         return None
+
+
+def parse_uploaded_epub(content: bytes, filename: str) -> UploadedEpubPayload:
+    with tempfile.NamedTemporaryFile(suffix=".epub") as temp_file:
+        temp_file.write(content)
+        temp_file.flush()
+        book = epub.read_epub(temp_file.name)
+
+    title_entries = book.get_metadata("DC", "title")
+    author_entries = book.get_metadata("DC", "creator")
+    title = normalize_book_title(
+        str(title_entries[0][0]).strip() if title_entries and title_entries[0][0] else Path(filename).stem
+    )
+    author = str(author_entries[0][0]).strip() if author_entries and author_entries[0][0] else None
+    chapter_count = len(
+        [
+            item
+            for item in book.get_items()
+            if item.get_type() == ITEM_DOCUMENT and item.get_name().lower() not in {"nav.xhtml"}
+        ]
+    )
+    cover_item = resolve_epub_cover(book)
+    return UploadedEpubPayload(
+        title=title or Path(filename).stem,
+        author=author or None,
+        chapter_count=max(chapter_count, 1),
+        content_hash=sha256(content).hexdigest(),
+        cover_filename=cover_item[0] if cover_item is not None else None,
+        cover_media_type=cover_item[1] if cover_item is not None else None,
+        cover_content=cover_item[2] if cover_item is not None else None,
+    )
+
+
+async def unique_manual_book_slug(session: AsyncSession, title: str, author: str | None) -> str:
+    slug_base = slugify_metadata_name(f"{author or 'unknown'}-{title}")
+    slug = f"manual-{slug_base}"
+    suffix = 2
+    while (await session.exec(select(Book).where(Book.slug == slug))).one_or_none() is not None:
+        slug = f"manual-{slug_base}-{suffix}"
+        suffix += 1
+    return slug
+
+
+async def build_tracked_book_summary_for_book_id(session: AsyncSession, book_id: str) -> TrackedBookSummary:
+    query = (
+        select(Book, TrackRule, BookState)
+        .join(TrackRule, TrackRule.book_id == Book.id)
+        .join(BookState, BookState.book_id == Book.id)
+        .where(Book.id == book_id)
+    )
+    row = (await session.exec(query)).one()
+    book, rule, state = row
+    collection_map = await collection_membership_by_book(session)
+    return build_tracked_book_summary(
+        book=book,
+        rule=rule,
+        state=state,
+        known_remote_chapters=await count_chapter_snapshots(session, book.id),
+        collections=collection_map.get(book.id, []),
+    )
 
 
 def branch_id_of(branch: Any) -> str | None:
@@ -404,6 +542,143 @@ def build_tracked_book_summary(
         last_downloaded_at=as_utc(state.last_downloaded_at),
         last_remote_chapter_key=state.last_remote_chapter_key,
     )
+
+
+async def import_uploaded_epubs(
+    session: AsyncSession,
+    files: list[tuple[str, bytes]],
+) -> list[TrackedBookSummary]:
+    imported: list[TrackedBookSummary] = []
+    for filename, content in files:
+        try:
+            payload = parse_uploaded_epub(content, filename)
+        except Exception as exc:
+            raise TrackingError(f"Failed to read EPUB: {filename}") from exc
+
+        source_url = f"manual-upload://epub/{payload.content_hash}"
+        existing_book = (
+            await session.exec(select(Book).where(Book.source_url == source_url))
+        ).one_or_none()
+        if existing_book is not None:
+            existing_book.title = payload.title or existing_book.title
+            existing_book.author = payload.author or existing_book.author
+            existing_book.available_chapters = max(
+                existing_book.available_chapters,
+                payload.chapter_count,
+            )
+            if (
+                existing_book.cover_url is None
+                and payload.cover_content
+                and payload.cover_filename
+                and payload.cover_media_type
+            ):
+                now = utcnow()
+                cover_content_hash = sha256(payload.cover_content).hexdigest()
+                cover_relative_path = write_binary_asset(
+                    payload.cover_filename,
+                    cover_content_hash,
+                    payload.cover_content,
+                )
+                cover_url = f"{source_url}#cover"
+                existing_book.cover_url = cover_url
+                cached_cover = (
+                    await session.exec(
+                        select(BinaryAssetCache).where(BinaryAssetCache.source_url == cover_url)
+                    )
+                ).one_or_none()
+                if cached_cover is None:
+                    session.add(
+                        BinaryAssetCache(
+                            source_url=cover_url,
+                            media_type=payload.cover_media_type,
+                            original_name=payload.cover_filename,
+                            relative_path=cover_relative_path,
+                            content_hash=cover_content_hash,
+                            fetched_at=now,
+                            updated_at=now,
+                        )
+                    )
+                else:
+                    cached_cover.media_type = payload.cover_media_type
+                    cached_cover.original_name = payload.cover_filename
+                    cached_cover.relative_path = cover_relative_path
+                    cached_cover.content_hash = cover_content_hash
+                    cached_cover.updated_at = now
+                    session.add(cached_cover)
+            session.add(existing_book)
+            await session.commit()
+            await session.refresh(existing_book)
+            imported.append(await build_tracked_book_summary_for_book_id(session, existing_book.id))
+            continue
+
+        slug = await unique_manual_book_slug(session, payload.title, payload.author)
+        now = utcnow()
+        cover_url = None
+        if payload.cover_content and payload.cover_filename and payload.cover_media_type:
+            cover_content_hash = sha256(payload.cover_content).hexdigest()
+            cover_relative_path = write_binary_asset(payload.cover_filename, cover_content_hash, payload.cover_content)
+            cover_url = f"{source_url}#cover"
+            session.add(
+                BinaryAssetCache(
+                    source_url=cover_url,
+                    media_type=payload.cover_media_type,
+                    original_name=payload.cover_filename,
+                    relative_path=cover_relative_path,
+                    content_hash=cover_content_hash,
+                    fetched_at=now,
+                    updated_at=now,
+                )
+            )
+
+        book = Book(
+            slug=slug,
+            source_url=source_url,
+            title=payload.title,
+            author=payload.author,
+            cover_url=cover_url,
+            available_chapters=payload.chapter_count,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(book)
+        await session.flush()
+
+        track_rule = TrackRule(
+            book_id=book.id,
+            enabled=False,
+            branch_mode="default",
+            created_at=now,
+            updated_at=now,
+        )
+        state = BookState(
+            book_id=book.id,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(track_rule)
+        session.add(state)
+        await session.flush()
+
+        artifact_relative_path = write_epub_artifact(book.id, content)
+        artifact = Artifact(
+            book_id=book.id,
+            format="epub",
+            relative_path=artifact_relative_path,
+            chapter_count=payload.chapter_count,
+            file_size_bytes=len(content),
+            created_at=now,
+        )
+        session.add(artifact)
+        await session.commit()
+        await session.refresh(book)
+        await session.refresh(track_rule)
+        await session.refresh(state)
+
+        imported.append(
+            await build_tracked_book_summary_for_book_id(session, book.id)
+        )
+
+    return imported
 
 
 def select_chapters_for_rule(

@@ -245,6 +245,26 @@ export async function createTrackedBook(payload: TrackBookPayload): Promise<void
   });
 }
 
+export async function uploadEpubBooks(files: File[]): Promise<TrackedBook[]> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file, file.name);
+  }
+
+  const response = await fetch("/api/v1/tracking/uploads/epub", {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const detail = payload?.detail ?? `Request failed with status ${response.status}`;
+    throw new ApiError(detail, response.status);
+  }
+
+  return (await response.json()) as TrackedBook[];
+}
+
 export async function updateTrackedBookBranch(bookId: string, selectedBranchId: string | null): Promise<void> {
   await apiFetch(`/api/v1/tracking/books/${bookId}/branch`, {
     method: "PATCH",
