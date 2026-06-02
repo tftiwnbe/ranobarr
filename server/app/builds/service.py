@@ -182,6 +182,8 @@ async def build_book_artifact(
         normalized_chapters.append(normalize_cached_payload(payload, content_type=content_type))
         fetched_count += 1
 
+    await session.commit()
+
     if event_logger:
         await event_logger(
             level="info",

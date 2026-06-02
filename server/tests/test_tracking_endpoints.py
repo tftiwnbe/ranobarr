@@ -5,6 +5,7 @@ from sqlmodel import select
 from app.core.titles import normalize_book_title
 from app.models import (
     Artifact,
+    BinaryAssetCache,
     Book,
     BookState,
     ChapterContentCache,
@@ -644,6 +645,67 @@ async def test_preview_endpoint_returns_branches_and_metadata(client, monkeypatc
     assert payload["branches"][0]["id"] == "5"
     assert payload["genres"][0]["name"] == "Fantasy"
     assert payload["tags"][0]["name"] == "Academy"
+
+
+async def test_create_tracked_book_primes_cover_before_epub_build(client, db, monkeypatch) -> None:
+    class FakeRanobeLibClient:
+        @staticmethod
+        def extract_slug_from_url(url: str) -> str | None:
+            return "cover-prime-book"
+
+        async def get_novel_info(self, slug: str):
+            assert slug == "cover-prime-book"
+            return {
+                "id": 1,
+                "eng_name": "Cover Prime Book",
+                "publisher": {"name": "Prime Publisher"},
+                "summary": "Summary",
+                "cover": {"default": "https://example.com/cover-prime.jpg"},
+                "genres": [],
+                "tags": [],
+            }
+
+        async def get_novel_chapters(self, slug: str):
+            return [
+                {
+                    "volume": "1",
+                    "number": "1",
+                    "name": "Chapter 1",
+                    "index": 1,
+                    "branches": [{"branch_id": 5, "teams": [{"name": "Main Team"}]}],
+                }
+            ]
+
+        async def close(self) -> None:
+            return None
+
+    async def fake_make_ranobelib_client(_session):
+        return FakeRanobeLibClient()
+
+    async def fake_fetch_binary_asset(_client, url: str):
+        assert url == "https://example.com/cover-prime.jpg"
+        return ("cover-prime.jpg", b"cover-bytes", "image/jpeg")
+
+    monkeypatch.setattr("app.tracking.router.make_ranobelib_client", fake_make_ranobelib_client)
+    monkeypatch.setattr("app.builds.assets.fetch_binary_asset", fake_fetch_binary_asset)
+
+    response = await client.post(
+        "/api/v1/tracking/books",
+        json={"url": "https://ranobelib.me/ru/book/cover-prime-book"},
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["title"] == "Cover Prime Book"
+    assert payload["author"] == "Prime Publisher"
+
+    result = await db.exec(select(BinaryAssetCache).where(BinaryAssetCache.source_url == "https://example.com/cover-prime.jpg"))
+    cached_cover = result.one_or_none()
+    assert cached_cover is not None
+
+    response = await client.get(f"/opds/books/{payload['book_id']}/cover")
+    assert response.status_code == 200
+    assert response.content == b"cover-bytes"
+    assert response.headers["content-type"].startswith("image/jpeg")
 
 
 async def test_branch_update_endpoint_enqueues_refresh(client, db) -> None:

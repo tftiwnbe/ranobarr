@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from hashlib import sha1
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.builds.assets import ensure_binary_assets_cached
 from app.builds.storage import artifact_file_path, cache_file_path
 from app.core.errors import TrackingError
 from app.core.jobs import enqueue_job
@@ -50,9 +52,19 @@ from .schemas import (
 )
 
 TRACKING_SORTS = {"added", "updated", "title"}
+logger = logging.getLogger(__name__)
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def prime_cover_asset(session: AsyncSession, cover_url: str | None) -> None:
+    if not cover_url:
+        return
+    try:
+        await ensure_binary_assets_cached(session, [cover_url])
+    except Exception:
+        logger.warning("Failed to prime cover asset", extra={"cover_url": cover_url}, exc_info=True)
 
 
 @dataclass(slots=True)
@@ -572,6 +584,7 @@ async def track_book(
     state.last_remote_chapter_key = resolved.last_remote_chapter_key
     session.add(state)
     await session.commit()
+    await prime_cover_asset(session, resolved.cover_url)
 
     job = await enqueue_job(
         session,
@@ -838,6 +851,7 @@ async def process_check_updates_job(
     session.add(book)
     session.add(state)
     await session.commit()
+    await prime_cover_asset(session, book.cover_url)
 
     return {
         "book_id": book.id,

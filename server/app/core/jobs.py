@@ -3,8 +3,8 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-
 from sqlalchemy import exists
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -152,9 +152,13 @@ class JobRuntime:
     async def run_pending_jobs(self) -> None:
         async with sessionmanager.session() as session:
             await self._enqueue_missing_epub_builds(session)
-            jobs = await self.pending_jobs(session)
-            for job in jobs:
-                await self._run_single_job(session, job)
+            job_ids = [job.id for job in await self.pending_jobs(session)]
+        for job_id in job_ids:
+            async with sessionmanager.session() as job_session:
+                job = await job_session.get(JobRecord, job_id)
+                if job is None or job.status != "queued":
+                    continue
+                await self._run_single_job(job_session, job)
 
     async def _enqueue_missing_epub_builds(self, session: AsyncSession) -> None:
         epub_exists = exists(
@@ -190,20 +194,29 @@ class JobRuntime:
     async def _run_single_job(self, session: AsyncSession, job: JobRecord) -> None:
         from app.tracking.service import process_check_updates_job
 
+        side_sessionmaker = None
+        if session.bind is not None:
+            side_sessionmaker = async_sessionmaker(
+                bind=session.bind,
+                class_=AsyncSession,
+                expire_on_commit=False,
+            )
+
+        async def write_event(**kwargs) -> None:
+            if side_sessionmaker is None:
+                event_context = sessionmanager.session()
+            else:
+                event_context = side_sessionmaker()
+            async with event_context as event_session:
+                await log_job_event(event_session, job_id=job.id, **kwargs)
+                await event_session.commit()
+
         await mark_job_started(session, job)
         client = await make_ranobelib_client(session)
         try:
-            await log_job_event(
-                session,
-                job_id=job.id,
-                level="info",
-                event_type="job.client_ready",
-                message="Prepared RanobeLib client",
-            )
+            await write_event(level="info", event_type="job.client_ready", message="Prepared RanobeLib client")
             if job.type == "check_updates":
-                await log_job_event(
-                    session,
-                    job_id=job.id,
+                await write_event(
                     level="info",
                     event_type="job.check_updates",
                     message="Checking remote chapter updates",
@@ -212,7 +225,7 @@ class JobRuntime:
                     session,
                     client,
                     job,
-                    event_logger=lambda **kwargs: log_job_event(session, job_id=job.id, **kwargs),
+                    event_logger=write_event,
                 )
                 if (
                     job.book_id
@@ -237,9 +250,7 @@ class JobRuntime:
                 if not job.book_id:
                     raise TrackingError("Build job is missing a book_id")
                 payload = json.loads(job.payload_json or "{}")
-                await log_job_event(
-                    session,
-                    job_id=job.id,
+                await write_event(
                     level="info",
                     event_type="job.build_artifact",
                     message="Building artifacts from cached chapters",
@@ -249,7 +260,7 @@ class JobRuntime:
                     client,
                     book_id=job.book_id,
                     requested_formats=payload.get("formats"),
-                    event_logger=lambda **kwargs: log_job_event(session, job_id=job.id, **kwargs),
+                    event_logger=write_event,
                 )
             else:
                 raise TrackingError(f"Unsupported job type: {job.type}")

@@ -119,7 +119,7 @@ async def ensure_binary_assets_cached(
                 content_hash=content_hash,
             )
 
-        await session.flush()
+        await session.commit()
         return cached
     finally:
         if created_client:
