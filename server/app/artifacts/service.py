@@ -40,6 +40,11 @@ def epub_download_filename(book: Book) -> str:
     return f"{author} - {title}.epub"
 
 
+def koreader_sync_filename(book: Book) -> str:
+    # KOReader matches against the filename saved on disk, where ":" is normalized to "_".
+    return epub_download_filename(book).replace(":", "_")
+
+
 def artifact_download_filename(book: Book, artifact: Artifact) -> str:
     if artifact.format == "epub":
         return epub_download_filename(book)

@@ -428,6 +428,50 @@ async def test_koreader_protocol_sync_links_matching_filename_hash(client, db) -
     assert payload["documents"][0]["linked_book_title"] == "Filename Title"
 
 
+async def test_koreader_protocol_sync_links_filename_hash_with_colon_replaced(client, db) -> None:
+    tracked = Book(
+        slug="filename-title-colon",
+        source_url="https://ranobelib.me/ru/book/filename-title-colon",
+        title="Filename Title: Test",
+        author="Filename Author",
+    )
+    db.add(tracked)
+    await db.commit()
+    await db.refresh(tracked)
+
+    filename_hash = hashlib.md5(
+        "Filename Author - Filename Title_ Test.epub".encode("utf-8")
+    ).hexdigest()
+
+    response = await client.post(
+        "/users/create",
+        json={"username": "reader-filename-colon", "password": "md5pass"},
+    )
+    assert response.status_code == 201
+
+    response = await client.put(
+        "/syncs/progress",
+        headers={
+            "x-auth-user": "reader-filename-colon",
+            "x-auth-key": "md5pass",
+        },
+        json={
+            "document": filename_hash,
+            "progress": "chapter-3",
+            "percentage": 0.3,
+            "device": "xteink x4",
+        },
+    )
+    assert response.status_code == 200
+
+    response = await client.get("/api/v1/koreader")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["documents"]) == 1
+    assert payload["documents"][0]["linked_book_id"] == tracked.id
+    assert payload["documents"][0]["linked_book_title"] == "Filename Title: Test"
+
+
 async def test_koreader_document_can_be_labeled_in_app(client, db) -> None:
     response = await client.post("/users/create", json={"username": "reader2", "password": "md5pass"})
     assert response.status_code == 201

@@ -10,7 +10,7 @@ from pathlib import Path
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.artifacts.service import epub_download_filename, latest_artifacts_for_books
+from app.artifacts.service import koreader_sync_filename, latest_artifacts_for_books
 from app.builds.storage import artifact_file_path
 from app.config import get_settings
 from app.core.errors import TrackingError
@@ -157,7 +157,7 @@ def artifact_md5(relative_path: str) -> str | None:
 
 
 def koreader_filename_md5(book: Book) -> str:
-    return hashlib.md5(epub_download_filename(book).encode("utf-8")).hexdigest()
+    return hashlib.md5(koreader_sync_filename(book).encode("utf-8")).hexdigest()
 
 
 async def find_linked_book_id_for_document(session: AsyncSession, document_hash: str) -> str | None:
