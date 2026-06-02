@@ -846,6 +846,7 @@ async def test_upload_epubs_extracts_cover_for_local_title(client, db) -> None:
     assert response.status_code == 201
     payload = response.json()[0]
     assert payload["cover_url"] is not None
+    assert payload["is_manual_upload"] is True
 
     book = await db.get(Book, payload["book_id"])
     assert book is not None

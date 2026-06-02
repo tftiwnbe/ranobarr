@@ -83,6 +83,7 @@ class TrackedBookSummary(BaseModel):
     title: str
     author: str | None
     cover_url: str | None
+    is_manual_upload: bool
     available_chapters: int
     known_remote_chapters: int
     genres: list[NamedTagSummary]

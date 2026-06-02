@@ -87,6 +87,7 @@ export type TrackedBook = {
   title: string;
   author: string | null;
   cover_url: string | null;
+  is_manual_upload: boolean;
   available_chapters: number;
   known_remote_chapters: number;
   genres: NamedTagSummary[];

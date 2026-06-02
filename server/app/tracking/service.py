@@ -530,6 +530,7 @@ def build_tracked_book_summary(
         title=normalize_book_title(book.title),
         author=book.author,
         cover_url=book.cover_url,
+        is_manual_upload=book.source_url.startswith("manual-upload://epub/"),
         available_chapters=book.available_chapters,
         known_remote_chapters=known_remote_chapters,
         genres=deserialize_named_items(book.genres_json),

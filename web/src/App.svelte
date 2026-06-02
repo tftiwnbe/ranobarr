@@ -1994,22 +1994,27 @@
                   ></textarea>
                 </div>
 
-                <div class="form-field">
-                  <label for="book-branch-select" class="form-label"
-                    >branch</label
-                  >
-                  <Select
-                    id="book-branch-select"
-                    class="form-select"
-                    value={branchSelectValue(drawerBook)}
-                    options={branchOptions(drawerBook.branches)}
-                    placeholder="default branch"
-                    disabled={actionBookId === drawerBook.book_id ||
-                      drawerBook.branches.length === 0}
-                    onValueChange={(value) =>
-                      void changeBookBranch(drawerBook.book_id, value || null)}
-                  />
-                </div>
+                {#if !drawerBook.is_manual_upload}
+                  <div class="form-field">
+                    <label for="book-branch-select" class="form-label"
+                      >branch</label
+                    >
+                    <Select
+                      id="book-branch-select"
+                      class="form-select"
+                      value={branchSelectValue(drawerBook)}
+                      options={branchOptions(drawerBook.branches)}
+                      placeholder="default branch"
+                      disabled={actionBookId === drawerBook.book_id ||
+                        drawerBook.branches.length === 0}
+                      onValueChange={(value) =>
+                        void changeBookBranch(
+                          drawerBook.book_id,
+                          value || null,
+                        )}
+                    />
+                  </div>
+                {/if}
 
                 <div class="book-drawer-actions">
                   <button
