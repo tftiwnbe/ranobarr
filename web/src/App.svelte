@@ -8,6 +8,7 @@
     EyeSlashIcon,
     FunnelSimpleIcon,
     HeartStraightIcon,
+    MagnifyingGlassIcon,
     PlusIcon,
     ShieldCheckIcon,
   } from "phosphor-svelte";
@@ -934,7 +935,9 @@
   <main class="page-body">
     <div class="toolbar">
       <div class="search-wrap">
-        <span class="search-icon">⌕</span>
+        <span class="search-icon">
+          <MagnifyingGlassIcon size={16} weight="regular" />
+        </span>
         <input
           class="search-input"
           type="search"
