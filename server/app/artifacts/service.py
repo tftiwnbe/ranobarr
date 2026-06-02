@@ -4,6 +4,7 @@ import re
 import unicodedata
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import quote
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -11,7 +12,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.titles import normalize_book_title
 from app.models import Artifact, Book
 
-_INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_INVALID_FILENAME_CHARS = re.compile(r'[<>"/\\|?*\x00-\x1f]')
 _WHITESPACE = re.compile(r"\s+")
 
 
@@ -51,6 +52,17 @@ def artifact_download_filename(book: Book, artifact: Artifact) -> str:
     if artifact.format == "manifest":
         return f"{stem} manifest{suffix}"
     return f"{stem}{suffix}"
+
+
+def build_download_headers(filename: str) -> dict[str, str]:
+    escaped_filename = filename.replace("\\", "\\\\").replace('"', '\\"')
+    encoded_filename = quote(filename, safe="")
+    return {
+        "content-disposition": (
+            f'attachment; filename="{escaped_filename}"; '
+            f"filename*=utf-8''{encoded_filename}"
+        )
+    }
 
 
 async def latest_artifact_for_book(

@@ -7,7 +7,12 @@ from fastapi.responses import FileResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.artifacts.service import artifact_download_filename, artifact_media_type, latest_artifact_for_book
+from app.artifacts.service import (
+    artifact_download_filename,
+    artifact_media_type,
+    build_download_headers,
+    latest_artifact_for_book,
+)
 from app.builds.assets import ensure_binary_assets_cached
 from app.builds.storage import artifact_file_path, asset_file_path
 from app.core.database import get_database_session
@@ -376,5 +381,5 @@ async def opds_acquire_epub(
     return FileResponse(
         path=file_path,
         media_type=artifact_media_type(artifact),
-        filename=artifact_download_filename(book, artifact),
+        headers=build_download_headers(artifact_download_filename(book, artifact)),
     )
