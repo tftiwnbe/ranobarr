@@ -345,7 +345,7 @@ h4 {
   gap: 0.5rem;
   padding: 0.65rem 1rem;
   border-bottom: 1px solid var(--line);
-  background: rgba(5, 5, 7, 0.96);
+  background: transparent;
   position: sticky;
   top: var(--header-h);
   z-index: 40;
@@ -465,7 +465,7 @@ h4 {
   padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
-  background: rgba(5, 5, 7, 0.5);
+  background: transparent;
 }
 
 .filter-select-wrap {
