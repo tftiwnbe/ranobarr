@@ -143,7 +143,7 @@ async def test_opds_book_detail_and_epub_acquisition(client, db, temp_data_dir) 
         for link in entry.findall("atom:link", ATOM_NS)
         if link.attrib.get("rel") == "http://opds-spec.org/acquisition"
     ]
-    assert acquisition_links == [f"http://test/opds/books/{book.id}/acquire/epub"]
+    assert acquisition_links == [f"/opds/books/{book.id}/acquire/epub"]
 
     response = await client.get(f"/opds/books/{book.id}/acquire/epub")
     assert response.status_code == 200

@@ -61,6 +61,16 @@ def _feed_type(kind: str) -> str:
     return OPDS_NAVIGATION_TYPE if kind == "navigation" else OPDS_ACQUISITION_TYPE
 
 
+def _relative_href(url: str) -> str:
+    split = urlsplit(url)
+    return urlunsplit(("", "", split.path, split.query, split.fragment))
+
+
+def _feed_urn(*parts: str) -> str:
+    joined = ":".join(part.strip(":") for part in parts if part)
+    return f"urn:ranobarr:{joined}"
+
+
 def _feed_root(title: str, feed_id: str, updated_at: datetime) -> Element:
     feed = Element(f"{{{ATOM_NS}}}feed")
     SubElement(feed, f"{{{ATOM_NS}}}id").text = feed_id
@@ -91,51 +101,51 @@ def _entry_link(entry: Element, *, rel: str, href: str, type_value: str | None =
 
 def build_root_feed(request: Request, *, downloadable_count: int, latest_updated_at: datetime | None) -> bytes:
     updated_at = latest_updated_at or utcnow()
-    root_href = str(request.url_for("opds_root"))
-    feed = _feed_root("Ranobarr Catalog", root_href, updated_at)
+    root_href = _relative_href(str(request.url_for("opds_root")))
+    feed = _feed_root("Ranobarr Catalog", _feed_urn("opds", "root"), updated_at)
     _feed_link(feed, rel="self", href=root_href, type_value=_feed_type("navigation"))
     _feed_link(feed, rel="start", href=root_href, type_value=_feed_type("navigation"))
     _feed_link(
         feed,
         rel="search",
-        href=str(request.url_for("opds_opensearch")),
+        href=_relative_href(str(request.url_for("opds_opensearch"))),
         type_value="application/opensearchdescription+xml",
     )
 
     sections = [
         (
             "All Books",
-            str(request.url_for("opds_books_feed")),
+            _relative_href(str(request.url_for("opds_books_feed"))),
             "Browse all downloadable EPUB books.",
             "acquisition",
         ),
         (
             "Recently Updated",
-            f"{request.url_for('opds_books_feed')}?sort=updated",
+            _relative_href(f"{request.url_for('opds_books_feed')}?sort=updated"),
             "Newest generated books first.",
             "acquisition",
         ),
         (
             "Favorites",
-            str(request.url_for("opds_favorite_books_feed")),
+            _relative_href(str(request.url_for("opds_favorite_books_feed"))),
             "Pinned favorite titles.",
             "acquisition",
         ),
         (
             "Collections",
-            str(request.url_for("opds_collection_groups_feed")),
+            _relative_href(str(request.url_for("opds_collection_groups_feed"))),
             "Browse user-defined collections.",
             "navigation",
         ),
         (
             "Genres",
-            str(request.url_for("opds_genre_groups_feed")),
+            _relative_href(str(request.url_for("opds_genre_groups_feed"))),
             "Browse books grouped by genre.",
             "navigation",
         ),
         (
             "Tags",
-            str(request.url_for("opds_tag_groups_feed")),
+            _relative_href(str(request.url_for("opds_tag_groups_feed"))),
             "Browse books grouped by tag.",
             "navigation",
         ),
@@ -172,7 +182,7 @@ def build_books_feed(
     _feed_link(
         feed,
         rel="search",
-        href=str(request.url_for("opds_opensearch")),
+        href=_relative_href(str(request.url_for("opds_opensearch"))),
         type_value="application/opensearchdescription+xml",
     )
 
@@ -208,10 +218,10 @@ def build_books_feed(
 
 
 def build_book_detail_feed(request: Request, *, record: OpdsBookRecord) -> bytes:
-    detail_href = str(request.url_for("opds_book_feed", book_id=record.book.id))
-    feed = _feed_root(normalize_book_title(record.book.title), detail_href, record.updated_at)
+    detail_href = _relative_href(str(request.url_for("opds_book_feed", book_id=record.book.id)))
+    feed = _feed_root(normalize_book_title(record.book.title), _feed_urn("opds", "books", record.book.id), record.updated_at)
     _feed_link(feed, rel="self", href=detail_href, type_value=_feed_type("acquisition"))
-    _feed_link(feed, rel="start", href=str(request.url_for("opds_root")), type_value=_feed_type("navigation"))
+    _feed_link(feed, rel="start", href=_relative_href(str(request.url_for("opds_root"))), type_value=_feed_type("navigation"))
     feed.append(build_book_entry(request, record))
     return tostring(feed, encoding="utf-8", xml_declaration=True)
 
@@ -248,9 +258,9 @@ def build_book_entry(request: Request, record: OpdsBookRecord) -> Element:
             {"term": f"tag:{tag.slug}", "label": tag.name},
         )
 
-    acquisition_href = str(request.url_for("opds_acquire_epub", book_id=record.book.id))
-    detail_href = str(request.url_for("opds_book_feed", book_id=record.book.id))
-    cover_href = str(request.url_for("opds_cover", book_id=record.book.id))
+    acquisition_href = _relative_href(str(request.url_for("opds_acquire_epub", book_id=record.book.id)))
+    detail_href = _relative_href(str(request.url_for("opds_book_feed", book_id=record.book.id)))
+    cover_href = _relative_href(str(request.url_for("opds_cover", book_id=record.book.id)))
 
     _entry_link(entry, rel="alternate", href=detail_href, type_value=_feed_type("acquisition"))
     _entry_link(
@@ -280,7 +290,7 @@ def build_opensearch_description(request: Request) -> bytes:
         f"{{{OPENSEARCH_NS}}}Url",
         {
             "type": OPDS_ACQUISITION_TYPE,
-            "template": f"{request.url_for('opds_search_feed')}?q={{searchTerms}}",
+            "template": f"{_relative_href(str(request.url_for('opds_search_feed')))}?q={{searchTerms}}",
         },
     )
     return tostring(root, encoding="utf-8", xml_declaration=True)
@@ -481,13 +491,13 @@ def build_group_feed(
 ) -> bytes:
     feed = _feed_root(title, self_href, utcnow())
     _feed_link(feed, rel="self", href=self_href, type_value=_feed_type("navigation"))
-    _feed_link(feed, rel="start", href=str(request.url_for("opds_root")), type_value=_feed_type("navigation"))
+    _feed_link(feed, rel="start", href=_relative_href(str(request.url_for("opds_root"))), type_value=_feed_type("navigation"))
     for item, count in entries:
         if isinstance(item, UserCollection):
-            href = str(request.url_for(route_name, collection_id=item.id))
+            href = _relative_href(str(request.url_for(route_name, collection_id=item.id)))
             entry_title = item.name
         else:
-            href = str(request.url_for(route_name, group_slug=item.slug))
+            href = _relative_href(str(request.url_for(route_name, group_slug=item.slug)))
             entry_title = item.name
         entry = SubElement(feed, f"{{{ATOM_NS}}}entry")
         SubElement(entry, f"{{{ATOM_NS}}}id").text = href
@@ -507,7 +517,7 @@ def _replace_query(href: str, **params: int) -> str:
     split = urlsplit(href)
     current = dict(parse_qsl(split.query, keep_blank_values=True))
     current.update({key: str(value) for key, value in params.items()})
-    return urlunsplit((split.scheme, split.netloc, split.path, urlencode(current), split.fragment))
+    return urlunsplit(("", "", split.path, urlencode(current), split.fragment))
 
 
 def _metadata_items(book: Book, field_name: str, allowed_slugs: set[str]) -> list[NamedTagSummary]:
